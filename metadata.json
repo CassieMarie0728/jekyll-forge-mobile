@@ -1,0 +1,6 @@
+{
+  "name": "Jekyll Forge",
+  "description": "A production-ready visual editor, publishing dashboard, and AI-powered CMS for GitHub-hosted Jekyll blogs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

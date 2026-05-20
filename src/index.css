@@ -1,0 +1,59 @@
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,300..900;1,300..900&family=Fira+Code:wght@400;500;700&family=Special+Elite&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Crimson Pro", Georgia, serif;
+  --font-serif: "Crimson Pro", Georgia, serif;
+  --font-mono: "Fira Code", monospace;
+  --font-elite: "Special Elite", cursive, monospace;
+
+  --color-crimson: #981518;
+  --color-crimson-light: #fdf2f2;
+  --color-crimson-hover: #b81d24;
+  --color-crimson-dark: #700f11;
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+    letter-spacing: 0.015em;
+  }
+
+  .font-elite {
+    font-family: var(--font-elite);
+  }
+
+  /* Distressed stamp effect for badges and elements */
+  .grungy-stamp {
+    font-family: var(--font-elite);
+    position: relative;
+    border: 2px dashed var(--color-crimson);
+    padding: 0.25rem 0.5rem;
+    display: inline-block;
+    transform: rotate(-1.5deg);
+    font-weight: bold;
+    text-transform: uppercase;
+  }
+
+  /* Grungy borders representing hand-crafted book materials */
+  .grungy-border {
+    border: 1px dashed rgba(152, 21, 24, 0.3);
+  }
+
+  .dark .grungy-border {
+    border: 1px dashed rgba(248, 113, 113, 0.3);
+  }
+
+  /* Typewriter custom scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #981518;
+    border-radius: 3px;
+  }
+}
