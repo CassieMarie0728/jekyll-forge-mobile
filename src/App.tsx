@@ -197,6 +197,9 @@ export default function App() {
   const [posts, setPosts] = useState<JekyllPost[]>(SEED_POSTS);
   const [activePost, setActivePost] = useState<JekyllPost>(SEED_POSTS[0]);
   const [activeFileTab, setActiveFileTab] = useState<string>("posts"); // "posts" | "drafts" | "assets" | "config"
+  const [showLeftSidebar, setShowLeftSidebar] = useState<boolean>(true);
+  const [showRightSidebar, setShowRightSidebar] = useState<boolean>(true);
+  const [showBottomPanel, setShowBottomPanel] = useState<boolean>(true);
 
   // Editor states
   const [editorMode, setEditorMode] = useState<"visual" | "raw" | "split">("split");
@@ -680,9 +683,31 @@ jobs:
               JEKYLL FORGE
             </span>
             <div className={`h-4 w-[1px] ${themeMode === "warm" ? "bg-amber-950/20" : "bg-zinc-800"}`}></div>
-            <span className="font-sans text-xs font-medium opacity-75 hidden sm:inline">
+            <span className="font-sans text-xs font-medium opacity-75 hidden md:inline">
               GitHub-Powered Vintage Press
             </span>
+            <div className={`h-4 w-[1px] ${themeMode === "warm" ? "bg-amber-950/20" : "bg-zinc-800"} hidden md:block`}></div>
+            <button
+              onClick={() => setShowLeftSidebar(!showLeftSidebar)}
+              title={showLeftSidebar ? "Collapse Files Menu" : "Expand Files Menu"}
+              className={`p-1.5 rounded border flex items-center gap-1.5 text-xs transition-colors cursor-pointer ${
+                themeMode === "warm" 
+                  ? "bg-[#faf6ee] border-amber-950/20 text-neutral-600 hover:bg-[#eae3d5]" 
+                  : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 focus:border-crimson"
+              }`}
+            >
+              {showLeftSidebar ? (
+                <>
+                  <EyeOff className="w-3.5 h-3.5 text-zinc-500" />
+                  <span className="hidden sm:inline font-elite text-[10px] leading-none">Hide Files</span>
+                </>
+              ) : (
+                <>
+                  <Eye className="w-3.5 h-3.5 text-crimson animate-pulse" />
+                  <span className="font-elite text-[10px] text-crimson font-bold leading-none">Show Files</span>
+                </>
+              )}
+            </button>
           </div>
 
           {/* Repository Dropdown Selector */}
@@ -714,6 +739,29 @@ jobs:
         </div>
 
         <div className="flex items-center gap-3">
+          {/* Toggle Right Sidebar (Front Matter) */}
+          <button
+            onClick={() => setShowRightSidebar(!showRightSidebar)}
+            title={showRightSidebar ? "Collapse Front Matter Editor" : "Expand Front Matter Editor"}
+            className={`p-1.5 rounded border flex items-center gap-1.5 text-xs transition-colors cursor-pointer ${
+              themeMode === "warm" 
+                ? "bg-[#faf6ee] border-amber-950/20 text-neutral-600 hover:bg-[#eae3d5]" 
+                : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 focus:border-crimson"
+            }`}
+          >
+            {showRightSidebar ? (
+              <>
+                <EyeOff className="w-3.5 h-3.5 text-zinc-500" />
+                <span className="hidden sm:inline font-elite text-[10px] leading-none">Hide Front Matter</span>
+              </>
+            ) : (
+              <>
+                <SlidersHorizontal className="w-3.5 h-3.5 text-crimson animate-pulse" />
+                <span className="font-elite text-[10px] text-crimson font-bold leading-none">Show Front Matter</span>
+              </>
+            )}
+          </button>
+
           {/* Quick theme toggler */}
           <div className="flex items-center rounded-lg border border-dashed border-crimson/20 p-0.5">
             <button
@@ -784,287 +832,288 @@ jobs:
 
       {/* 2. BODY CONTENT LAYOUT SPACE */}
       <div className="flex-1 flex overflow-hidden">
-        
-        {/* LEFT WORKSPACE SIDEBAR PANEL */}
-        <aside className={`w-80 flex flex-col border-r divide-y overflow-y-auto shrink-0 ${
-          themeMode === "warm" 
-            ? "border-amber-900/10 bg-[#faf6ee] divide-amber-950/10" 
-            : "border-zinc-800 bg-zinc-950 divide-zinc-900"
-        }`}>
-          
-          {/* Section A: Search & Quick Create controls */}
-          <div className="p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="font-elite text-xs uppercase tracking-widest text-crimson font-bold">
-                📖 Editorial Files
-              </span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() => handleCreateNewPost(false)}
-                  title="Make New Post (Live)"
-                  className="p-1 rounded hover:bg-crimson/10 text-crimson border border-dashed border-crimson/30 transition-all"
-                >
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={() => handleCreateNewPost(true)}
-                  title="Make New Draft"
-                  className="px-1.5 py-0.5 text-[9px] font-elite uppercase rounded border border-zinc-800 text-zinc-400 hover:text-red-300 transition-colors"
-                >
-                  + Draft
-                </button>
+           {/* LEFT WORKSPACE SIDEBAR PANEL */}
+        {showLeftSidebar && (
+          <aside className={`w-80 flex flex-col border-r divide-y overflow-y-auto shrink-0 ${
+            themeMode === "warm" 
+              ? "border-amber-900/10 bg-[#faf6ee] divide-amber-950/10" 
+              : "border-zinc-800 bg-zinc-950 divide-zinc-900"
+          }`}>
+            
+            {/* Section A: Search & Quick Create controls */}
+            <div className="p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="font-elite text-xs uppercase tracking-widest text-crimson font-bold">
+                  📖 Editorial Files
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => handleCreateNewPost(false)}
+                    title="Make New Post (Live)"
+                    className="p-1 rounded hover:bg-crimson/10 text-crimson border border-dashed border-crimson/30 transition-all"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleCreateNewPost(true)}
+                    title="Make New Draft"
+                    className="px-1.5 py-0.5 text-[9px] font-elite uppercase rounded border border-zinc-800 text-zinc-400 hover:text-red-300 transition-colors"
+                  >
+                    + Draft
+                  </button>
+                </div>
+              </div>
+
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-zinc-500" />
+                <input
+                  type="text"
+                  placeholder="Search markdown files..."
+                  value={fileSearch}
+                  onChange={(e) => setFileSearch(e.target.value)}
+                  className={`w-full font-mono text-xs pl-8 pr-3 py-2 rounded outline-none border ${
+                    themeMode === "warm" 
+                      ? "bg-[#f5eeea] border-amber-950/15 text-amber-950 placeholder:text-neutral-500" 
+                      : "bg-zinc-900/70 border-zinc-800 text-zinc-300 placeholder:text-zinc-600 focus:border-crimson"
+                  }`}
+                />
               </div>
             </div>
 
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-zinc-500" />
-              <input
-                type="text"
-                placeholder="Search markdown files..."
-                value={fileSearch}
-                onChange={(e) => setFileSearch(e.target.value)}
-                className={`w-full font-mono text-xs pl-8 pr-3 py-2 rounded outline-none border ${
-                  themeMode === "warm" 
-                    ? "bg-[#f5eeea] border-amber-950/15 text-amber-950 placeholder:text-neutral-500" 
-                    : "bg-zinc-900/70 border-zinc-800 text-zinc-300 placeholder:text-zinc-600 focus:border-crimson"
-                }`}
-              />
-            </div>
-          </div>
+            {/* Section B: File navigation sub-tabs */}
+            <div>
+              <div className={`flex text-center border-b ${
+                themeMode === "warm" ? "border-amber-950/5" : "border-zinc-900"
+              }`}>
+                {["posts", "assets", "config", "plugins"].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveFileTab(tab)}
+                    className={`flex-1 py-2 font-elite text-[10px] uppercase tracking-wider transition-colors border-b-2 ${
+                      activeFileTab === tab
+                        ? "border-crimson text-crimson font-bold"
+                        : "border-transparent text-zinc-500 hover:text-zinc-300"
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
 
-          {/* Section B: File navigation sub-tabs */}
-          <div>
-            <div className={`flex text-center border-b ${
-              themeMode === "warm" ? "border-amber-950/5" : "border-zinc-900"
-            }`}>
-              {["posts", "assets", "config", "plugins"].map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveFileTab(tab)}
-                  className={`flex-1 py-2 font-elite text-[10px] uppercase tracking-wider transition-colors border-b-2 ${
-                    activeFileTab === tab
-                      ? "border-crimson text-crimson font-bold"
-                      : "border-transparent text-zinc-500 hover:text-zinc-300"
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
-            </div>
-
-            {/* List renders based on dynamic left sidebar tab selection */}
-            <div className="p-2 space-y-1">
-              
-              {/* Category: Posts & Drafts */}
-              {activeFileTab === "posts" && (
-                <>
-                  <div className="text-[10px] uppercase tracking-wider text-zinc-500 px-2 pt-2 font-elite">
-                    Active Jekyll Repository Records
-                  </div>
-                  {filteredPosts.length === 0 ? (
-                    <div className="p-4 text-center text-xs text-zinc-500 italic">No files match your query</div>
-                  ) : (
-                    filteredPosts.map((post) => {
-                      const isSelected = activePost.path === post.path;
-                      return (
-                        <div
-                          key={post.path}
-                          className={`group w-full text-left p-2.5 rounded-md cursor-pointer transition-all border flex flex-col gap-1 ${
-                            isSelected
-                              ? "bg-crimson/5 border-crimson text-red-100"
-                              : "border-transparent text-zinc-400 hover:bg-zinc-900/30 hover:text-zinc-200"
-                          }`}
-                          onClick={() => handleSelectPost(post)}
-                        >
-                          <div className="flex items-start justify-between gap-1">
-                            <div className="flex items-center gap-1.5 font-sans font-semibold text-xs leading-normal">
-                              <FileText className="w-3.5 h-3.5 text-crimson/80 shrink-0" />
-                              <span className="line-clamp-1">{post.frontMatter.title || "Untitled"}</span>
-                            </div>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeletePost(post.path);
-                              }}
-                              className="text-zinc-600 hover:text-crimson opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Delete permanently"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                          
-                          <div className="flex items-center justify-between text-[9px] font-mono text-zinc-500">
-                            <span>{post.filename.slice(0, 10)}</span>
-                            <span className="px-1.5 py-0.2 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 uppercase">
-                              {post.frontMatter.layout || "post"}
-                            </span>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </>
-              )}
-
-              {/* Category: Media Assets Asset list */}
-              {activeFileTab === "assets" && (
-                <div className="p-2 space-y-3">
-                  <div className="border border-dashed border-zinc-800 p-4 rounded-lg bg-zinc-950/50 text-center relative">
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleSimulateAssetUpload}
-                      className="absolute inset-0 opacity-0 cursor-pointer w-full"
-                    />
-                    <Upload className="w-6 h-6 text-crimson mx-auto mb-1 animate-bounce" />
-                    <span className="text-[10px] font-elite block text-zinc-400 uppercase">Optimize Asset</span>
-                    <span className="text-[8px] text-zinc-600 block mt-0.5">Drag-and-drop auto WEBP conversions</span>
-                  </div>
-
-                  <div className="space-y-2">
-                    <span className="text-[10px] font-elite text-zinc-500 uppercase block border-b border-zinc-900 pb-1">
-                      ■ Current Assets Catalog (/assets/images/)
-                    </span>
-                    {assets.map((asset) => (
-                      <div key={asset.path} className="p-2 border border-zinc-900 bg-zinc-900/40 rounded flex items-center gap-2">
-                        <img src={asset.url} alt={asset.alt} className="w-10 h-10 object-cover rounded bg-zinc-950" />
-                        <div className="flex-1 min-w-0 font-mono text-[9px] text-zinc-400">
-                          <p className="truncate text-zinc-300 font-bold">{asset.name}</p>
-                          <p>{Math.round((asset.size || 0) / 1024)} KB • {asset.mimeType}</p>
-                        </div>
-                        <button
-                          onClick={() => {
-                            const markdownCode = `![${asset.alt || ""}](${asset.path})`;
-                            navigator.clipboard.writeText(markdownCode);
-                            alert(`Markdown asset reference copied:\n\n${markdownCode}`);
-                          }}
-                          className="p-1 hover:text-crimson font-mono text-[10px]"
-                          title="Copy Markdown code"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Category: Config Files panel */}
-              {activeFileTab === "config" && (
-                <div className="p-2 space-y-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-zinc-500 font-elite text-[10px]">
-                      <span>_CONFIG.YML EDITOR</span>
-                      <span className="font-mono text-emerald-400 text-[8px]">ACTIVE</span>
+              {/* List renders based on dynamic left sidebar tab selection */}
+              <div className="p-2 space-y-1">
+                
+                {/* Category: Posts & Drafts */}
+                {activeFileTab === "posts" && (
+                  <>
+                    <div className="text-[10px] uppercase tracking-wider text-zinc-500 px-2 pt-2 font-elite">
+                      Active Jekyll Repository Records
                     </div>
-                    <textarea
-                      value={configYmlContent}
-                      onChange={(e) => setConfigYmlContent(e.target.value)}
-                      rows={8}
-                      className="w-full bg-zinc-950/80 border border-zinc-800 text-zinc-300 font-mono text-[11px] p-2 rounded focus:border-crimson outline-none leading-relaxed"
-                    />
-                    <button
-                      onClick={() => alert("Simulated config commit successfully written to repository core!")}
-                      className="w-full py-1 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-200 font-elite text-[10px] rounded"
-                    >
-                      Save Configuration Settings
-                    </button>
-                  </div>
-
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-zinc-500 font-elite text-[10px]">
-                      <span>GEMFILE (DEPS MANIFEST)</span>
-                      <span className="font-mono text-zinc-500 text-[8px]">LOCK</span>
-                    </div>
-                    <textarea
-                      value={gemfileContent}
-                      onChange={(e) => setGemfileContent(e.target.value)}
-                      rows={5}
-                      className="w-full bg-zinc-950/80 border border-zinc-800 text-zinc-300 font-mono text-[11px] p-2 rounded focus:border-crimson outline-none leading-relaxed"
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Category: Custom plugins explorer */}
-              {activeFileTab === "plugins" && (
-                <div className="p-2 space-y-3">
-                  <div className="p-3 bg-crimson/10 border-l border-crimson text-[11px] text-red-300 leading-relaxed font-sans mt-1">
-                    <strong className="font-elite text-crimson text-[11px] uppercase tracking-wider block mb-1">
-                      ☠ CRITICAL PLUGIN WARNING:
-                    </strong>
-                    GitHub Pages does not support every Jekyll plugin when using the default build pipeline. Unsupported plugins require a **custom GitHub Actions workflow** to compile safely.
-                  </div>
-
-                  <div className="space-y-2">
-                    {plugins.map((p) => (
-                      <div key={p.name} className="p-2.5 border border-zinc-900 bg-zinc-900/30 rounded-lg space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="font-mono text-[11px] font-bold text-zinc-300">{p.name}</span>
-                          <span className={`text-[8px] font-elite px-1 rounded ${
-                            p.pagesSupported ? "bg-emerald-950 text-emerald-400" : "bg-amber-950 text-amber-500"
-                          }`}>
-                            {p.pagesSupported ? "Pages Safe" : "Actions req."}
-                          </span>
-                        </div>
-                        <p className="text-[10px] text-zinc-500 leading-normal">{p.description}</p>
-                        <div className="flex items-center justify-between pt-1">
-                          <span className="text-[9px] text-zinc-600 font-mono">Status</span>
-                          <button
-                            onClick={() => handleTogglePlugin(p.name, p.enabled)}
-                            className={`px-2 py-0.5 text-[9px] font-elite rounded border ${
-                              p.enabled
-                                ? "bg-crimson/20 border-crimson text-red-300"
-                                : "bg-zinc-900 border-zinc-800 text-zinc-500"
+                    {filteredPosts.length === 0 ? (
+                      <div className="p-4 text-center text-xs text-zinc-500 italic">No files match your query</div>
+                    ) : (
+                      filteredPosts.map((post) => {
+                        const isSelected = activePost.path === post.path;
+                        return (
+                          <div
+                            key={post.path}
+                            className={`group w-full text-left p-2.5 rounded-md cursor-pointer transition-all border flex flex-col gap-1 ${
+                              isSelected
+                                ? "bg-crimson/5 border-crimson text-red-100"
+                                : "border-transparent text-zinc-400 hover:bg-zinc-900/30 hover:text-zinc-200"
                             }`}
+                            onClick={() => handleSelectPost(post)}
                           >
-                            {p.enabled ? "RUNNING" : "DISABLED"}
+                            <div className="flex items-start justify-between gap-1">
+                              <div className="flex items-center gap-1.5 font-sans font-semibold text-xs leading-normal">
+                                <FileText className="w-3.5 h-3.5 text-crimson/80 shrink-0" />
+                                <span className="line-clamp-1">{post.frontMatter.title || "Untitled"}</span>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeletePost(post.path);
+                                }}
+                                className="text-zinc-600 hover:text-crimson opacity-0 group-hover:opacity-100 transition-opacity"
+                                title="Delete permanently"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            
+                            <div className="flex items-center justify-between text-[9px] font-mono text-zinc-500">
+                              <span>{post.filename.slice(0, 10)}</span>
+                              <span className="px-1.5 py-0.2 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 uppercase">
+                                {post.frontMatter.layout || "post"}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </>
+                )}
+
+                {/* Category: Media Assets Asset list */}
+                {activeFileTab === "assets" && (
+                  <div className="p-2 space-y-3">
+                    <div className="border border-dashed border-zinc-800 p-4 rounded-lg bg-zinc-950/50 text-center relative">
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={handleSimulateAssetUpload}
+                        className="absolute inset-0 opacity-0 cursor-pointer w-full"
+                      />
+                      <Upload className="w-6 h-6 text-crimson mx-auto mb-1 animate-bounce" />
+                      <span className="text-[10px] font-elite block text-zinc-400 uppercase">Optimize Asset</span>
+                      <span className="text-[8px] text-zinc-600 block mt-0.5">Drag-and-drop auto WEBP conversions</span>
+                    </div>
+
+                    <div className="space-y-2">
+                      <span className="text-[10px] font-elite text-zinc-500 uppercase block border-b border-zinc-900 pb-1">
+                        ■ Current Assets Catalog (/assets/images/)
+                      </span>
+                      {assets.map((asset) => (
+                        <div key={asset.path} className="p-2 border border-zinc-900 bg-zinc-900/40 rounded flex items-center gap-2">
+                          <img src={asset.url} alt={asset.alt} className="w-10 h-10 object-cover rounded bg-zinc-950" />
+                          <div className="flex-1 min-w-0 font-mono text-[9px] text-zinc-400">
+                            <p className="truncate text-zinc-300 font-bold">{asset.name}</p>
+                            <p>{Math.round((asset.size || 0) / 1024)} KB • {asset.mimeType}</p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const markdownCode = `![${asset.alt || ""}](${asset.path})`;
+                              navigator.clipboard.writeText(markdownCode);
+                              alert(`Markdown asset reference copied:\n\n${markdownCode}`);
+                            }}
+                            className="p-1 hover:text-crimson font-mono text-[10px]"
+                            title="Copy Markdown code"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
                           </button>
                         </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Category: Config Files panel */}
+                {activeFileTab === "config" && (
+                  <div className="p-2 space-y-4">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-zinc-500 font-elite text-[10px]">
+                        <span>_CONFIG.YML EDITOR</span>
+                        <span className="font-mono text-emerald-400 text-[8px]">ACTIVE</span>
                       </div>
-                    ))}
-                  </div>
+                      <textarea
+                        value={configYmlContent}
+                        onChange={(e) => setConfigYmlContent(e.target.value)}
+                        rows={8}
+                        className="w-full bg-zinc-950/80 border border-zinc-800 text-zinc-300 font-mono text-[11px] p-2 rounded focus:border-crimson outline-none leading-relaxed"
+                      />
+                      <button
+                        onClick={() => alert("Simulated config commit successfully written to repository core!")}
+                        className="w-full py-1 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-200 font-elite text-[10px] rounded"
+                      >
+                        Save Configuration Settings
+                      </button>
+                    </div>
 
-                  <button
-                    onClick={() => setShowWorkflowGenerator(true)}
-                    className="w-full bg-crimson/10 border border-crimson/30 hover:bg-crimson/20 text-red-300 font-elite text-[10px] py-1.5 rounded text-center block"
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-zinc-500 font-elite text-[10px]">
+                        <span>GEMFILE (DEPS MANIFEST)</span>
+                        <span className="font-mono text-zinc-500 text-[8px]">LOCK</span>
+                      </div>
+                      <textarea
+                        value={gemfileContent}
+                        onChange={(e) => setGemfileContent(e.target.value)}
+                        rows={5}
+                        className="w-full bg-zinc-950/80 border border-zinc-800 text-zinc-300 font-mono text-[11px] p-2 rounded focus:border-crimson outline-none leading-relaxed"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Category: Custom plugins explorer */}
+                {activeFileTab === "plugins" && (
+                  <div className="p-2 space-y-3">
+                    <div className="p-3 bg-crimson/10 border-l border-crimson text-[11px] text-red-300 leading-relaxed font-sans mt-1">
+                      <strong className="font-elite text-crimson text-[11px] uppercase tracking-wider block mb-1">
+                        ☠ CRITICAL PLUGIN WARNING:
+                      </strong>
+                      GitHub Pages does not support every Jekyll plugin when using the default build pipeline. Unsupported plugins require a **custom GitHub Actions workflow** to compile safely.
+                    </div>
+
+                    <div className="space-y-2">
+                      {plugins.map((p) => (
+                        <div key={p.name} className="p-2.5 border border-zinc-900 bg-zinc-900/30 rounded-lg space-y-1.5">
+                          <div className="flex items-center justify-between">
+                            <span className="font-mono text-[11px] font-bold text-zinc-300">{p.name}</span>
+                            <span className={`text-[8px] font-elite px-1 rounded ${
+                              p.pagesSupported ? "bg-emerald-950 text-emerald-400" : "bg-amber-950 text-amber-500"
+                            }`}>
+                              {p.pagesSupported ? "Pages Safe" : "Actions req."}
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-zinc-500 leading-normal">{p.description}</p>
+                          <div className="flex items-center justify-between pt-1">
+                            <span className="text-[9px] text-zinc-600 font-mono">Status</span>
+                            <button
+                              onClick={() => handleTogglePlugin(p.name, p.enabled)}
+                              className={`px-2 py-0.5 text-[9px] font-elite rounded border ${
+                                p.enabled
+                                  ? "bg-crimson/20 border-crimson text-red-300"
+                                  : "bg-zinc-900 border-zinc-800 text-zinc-500"
+                              }`}
+                            >
+                              {p.enabled ? "RUNNING" : "DISABLED"}
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <button
+                      onClick={() => setShowWorkflowGenerator(true)}
+                      className="w-full bg-crimson/10 border border-crimson/30 hover:bg-crimson/20 text-red-300 font-elite text-[10px] py-1.5 rounded text-center block"
+                    >
+                      Generate Actions Build Pipeline
+                    </button>
+                  </div>
+                )}
+
+              </div>
+            </div>
+
+            {/* Section C: Snapshots & Offline draft backup history */}
+            <div className="p-4 flex-1 flex flex-col min-h-[180px]">
+              <span className="font-elite text-[10px] uppercase tracking-widest text-zinc-500 block mb-2">
+                ■ SNAPSHOT RESTORE POINTS
+              </span>
+              <div className="space-y-2 overflow-y-auto flex-1 max-h-48 pr-1">
+                {snapshots.map((snap) => (
+                  <div
+                    key={snap.id}
+                    onClick={() => handleRestoreSnapshot(snap)}
+                    className="p-2 bg-zinc-900/50 border border-zinc-900 rounded-lg hover:border-zinc-700 cursor-pointer text-left transition-all"
                   >
-                    Generate Actions Build Pipeline
-                  </button>
-                </div>
-              )}
-
-            </div>
-          </div>
-
-          {/* Section C: Snapshots & Offline draft backup history */}
-          <div className="p-4 flex-1 flex flex-col min-h-[180px]">
-            <span className="font-elite text-[10px] uppercase tracking-widest text-zinc-500 block mb-2">
-              ■ SNAPSHOT RESTORE POINTS
-            </span>
-            <div className="space-y-2 overflow-y-auto flex-1 max-h-48 pr-1">
-              {snapshots.map((snap) => (
-                <div
-                  key={snap.id}
-                  onClick={() => handleRestoreSnapshot(snap)}
-                  className="p-2 bg-zinc-900/50 border border-zinc-900 rounded-lg hover:border-zinc-700 cursor-pointer text-left transition-all"
-                >
-                  <div className="flex items-center justify-between mb-0.5 text-[9px] font-mono">
-                    <span className={`font-semibold ${snap.reason === "autosave" ? "text-amber-500" : "text-crimson"}`}>
-                      {snap.reason.toUpperCase()}
-                    </span>
-                    <span className="text-zinc-500">{new Date(snap.createdAt).toLocaleTimeString()}</span>
+                    <div className="flex items-center justify-between mb-0.5 text-[9px] font-mono">
+                      <span className={`font-semibold ${snap.reason === "autosave" ? "text-amber-500" : "text-crimson"}`}>
+                        {snap.reason.toUpperCase()}
+                      </span>
+                      <span className="text-zinc-500">{new Date(snap.createdAt).toLocaleTimeString()}</span>
+                    </div>
+                    <p className="text-[10px] text-zinc-400 font-elite truncate">{snap.label}</p>
                   </div>
-                  <p className="text-[10px] text-zinc-400 font-elite truncate">{snap.label}</p>
-                </div>
-              ))}
+                ))}
+              </div>
+              <div className="pt-2 text-[9px] text-zinc-600 font-mono leading-normal text-center">
+                * Local changes saved to memory. Revert timeline at any time.
+              </div>
             </div>
-            <div className="pt-2 text-[9px] text-zinc-600 font-mono leading-normal text-center">
-              * Local changes saved to memory. Revert timeline at any time.
-            </div>
-          </div>
 
-        </aside>
+          </aside>
+        )}
 
         {/* CENTER STAGE: VISUAL WYSIWYG & CODE EDITOR */}
         <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
@@ -1103,6 +1152,24 @@ jobs:
                   {m} Editor
                 </button>
               ))}
+
+              <div className={`h-4 w-[1px] mx-1.5 ${themeMode === "warm" ? "bg-amber-955/20" : "bg-zinc-800"}`}></div>
+
+              <button
+                onClick={() => setShowBottomPanel(!showBottomPanel)}
+                title={showBottomPanel ? "Hide Bottom Utilities & AI Assistant" : "Show Bottom Utilities & AI Assistant"}
+                className={`px-2.5 py-1 rounded border transition-colors cursor-pointer text-xs ${
+                  themeMode === "warm" 
+                    ? "bg-[#faf6ee] border-amber-950/20 text-neutral-600 hover:bg-[#eae3d5]" 
+                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 focus:border-crimson"
+                }`}
+              >
+                {showBottomPanel ? (
+                  <span className="font-elite text-[10px] text-zinc-400">Hide Utilities</span>
+                ) : (
+                  <span className="font-elite text-[10px] text-crimson font-semibold">Show Utilities</span>
+                )}
+              </button>
             </div>
           </div>
 
@@ -1268,327 +1335,334 @@ jobs:
 
           </div>
 
-          {/* LOWER INTERACTIVE SHEETS: AI PLUGINS AND SYSTEM AUDITS */}
-          <div className="border-t border-zinc-800 bg-zinc-950 p-6 space-y-6">
-            <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-              
-              {/* Category: Real-time Writing & Editing Assistant */}
-              <div className="xl:col-span-7 border border-zinc-800/80 rounded-lg p-5 bg-zinc-900/30">
-                <AIAssistant
-                  currentPostMarkdown={draftMarkdown}
-                  currentPostTitle={draftTitle}
-                  onModifyContent={(newContent) => setDraftMarkdown(newContent)}
-                  onModifyFrontMatter={(key, val) => {
-                    setDraftFrontMatter(prev => ({ ...prev, [key]: val }));
-                    if (key === "title") setDraftTitle(val);
-                  }}
-                  brandVoicePrompt={aiSettings.brandVoicePrompt}
+          {/* LOWER INTERACTIVE SHEETS & SETTINGS (CONTAINED IN BOTTOM PANEL) */}
+          {showBottomPanel && (
+            <>
+              {/* LOWER INTERACTIVE SHEETS: AI PLUGINS AND SYSTEM AUDITS */}
+              <div className="border-t border-zinc-800 bg-zinc-950 p-6 space-y-6">
+                <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
+                  
+                  {/* Category: Real-time Writing & Editing Assistant */}
+                  <div className="xl:col-span-7 border border-zinc-800/80 rounded-lg p-5 bg-zinc-900/30">
+                    <AIAssistant
+                      currentPostMarkdown={draftMarkdown}
+                      currentPostTitle={draftTitle}
+                      onModifyContent={(newContent) => setDraftMarkdown(newContent)}
+                      onModifyFrontMatter={(key, val) => {
+                        setDraftFrontMatter(prev => ({ ...prev, [key]: val }));
+                        if (key === "title") setDraftTitle(val);
+                      }}
+                      brandVoicePrompt={aiSettings.brandVoicePrompt}
+                    />
+                  </div>
+
+                  {/* Category: System SEO Checklists & Alt Text Verifier */}
+                  <div className="xl:col-span-5 border border-zinc-800/80 rounded-lg p-5 bg-zinc-900/30 flex flex-col">
+                    <div className="flex items-center gap-2 border-b border-zinc-800 pb-2 mb-3">
+                      <Terminal className="w-4 h-4 text-crimson" />
+                      <h4 className="font-elite text-zinc-200">Site Quality & Accessibility Audits</h4>
+                    </div>
+
+                    <div className="space-y-2.5 flex-1 max-h-[300px] overflow-y-auto pr-1">
+                      {seoReport.length === 0 ? (
+                        <div className="p-6 text-center text-xs text-zinc-500 italic">
+                          ✓ No warnings found! Your post conforms perfectly to Jekyll production standards.
+                        </div>
+                      ) : (
+                        seoReport.map((rep) => (
+                          <div
+                            key={rep.id}
+                            className={`p-3 border rounded-lg flex gap-2 text-xs leading-normal ${
+                              rep.severity === "critical"
+                                ? "bg-red-950/20 border-red-900/30 text-red-400"
+                                : rep.severity === "warning"
+                                ? "bg-amber-950/20 border-amber-900/30 text-amber-300"
+                                : "bg-zinc-900/50 border-zinc-800 text-zinc-300"
+                            }`}
+                          >
+                            <div className="pt-0.5">
+                              {rep.severity === "critical" ? "☠" : rep.severity === "warning" ? "▲" : "■"}
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-bold text-[10px] uppercase font-elite text-zinc-400">
+                                {rep.type.toUpperCase()} • {rep.severity.toUpperCase()}
+                              </p>
+                              <p className="text-zinc-200 mt-0.5">{rep.message}</p>
+                            </div>
+                            {rep.type === "seo" && rep.message.includes("meta") && (
+                              <button
+                                onClick={() => {
+                                  // Trigger automatic fix with custom tags
+                                  setDraftFrontMatter(prev => ({
+                                    ...prev,
+                                    description: draftMarkdown.slice(0, 150).replace(/[#\*_>\[\]!]/g, "") + "..."
+                                  }));
+                                  setStatusText("Estimated description added to front-matter metadata.");
+                                }}
+                                className="text-[9px] font-elite text-crimson hover:underline shrink-0"
+                              >
+                                AUTO-GEN
+                              </button>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="mt-4 p-3 bg-zinc-900/40 border border-zinc-800 rounded text-[11px] text-zinc-400 font-sans leading-relaxed">
+                      <span className="font-elite text-crimson block mb-2 leading-none uppercase">
+                        ■ Theme Font Styling Pairing
+                      </span>
+                      Configured Heading Google Font is <strong className="text-zinc-200">{themeConfig.headingFont}</strong> and body is <strong className="text-zinc-200">{themeConfig.bodyFont}</strong>. Set custom configuration from the Settings panel below.
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+
+              {/* AI Settings Section */}
+              <div className="border-t border-zinc-800 bg-zinc-950/40 p-6">
+                <AISettings
+                  settings={aiSettings}
+                  onUpdate={(fields) => setAiSettings(prev => ({ ...prev, ...fields }))}
+                  openaiKey={openaiKey}
+                  onUpdateOpenaiKey={setOpenaiKey}
                 />
               </div>
-
-              {/* Category: System SEO Checklists & Alt Text Verifier */}
-              <div className="xl:col-span-5 border border-zinc-800/80 rounded-lg p-5 bg-zinc-900/30 flex flex-col">
-                <div className="flex items-center gap-2 border-b border-zinc-800 pb-2 mb-3">
-                  <Terminal className="w-4 h-4 text-crimson" />
-                  <h4 className="font-elite text-zinc-200">Site Quality & Accessibility Audits</h4>
-                </div>
-
-                <div className="space-y-2.5 flex-1 max-h-[300px] overflow-y-auto pr-1">
-                  {seoReport.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-zinc-500 italic">
-                      ✓ No warnings found! Your post conforms perfectly to Jekyll production standards.
-                    </div>
-                  ) : (
-                    seoReport.map((rep) => (
-                      <div
-                        key={rep.id}
-                        className={`p-3 border rounded-lg flex gap-2 text-xs leading-normal ${
-                          rep.severity === "critical"
-                            ? "bg-red-950/20 border-red-900/30 text-red-400"
-                            : rep.severity === "warning"
-                            ? "bg-amber-950/20 border-amber-900/30 text-amber-300"
-                            : "bg-zinc-900/50 border-zinc-800 text-zinc-300"
-                        }`}
-                      >
-                        <div className="pt-0.5">
-                          {rep.severity === "critical" ? "☠" : rep.severity === "warning" ? "▲" : "■"}
-                        </div>
-                        <div className="flex-1">
-                          <p className="font-bold text-[10px] uppercase font-elite text-zinc-400">
-                            {rep.type.toUpperCase()} • {rep.severity.toUpperCase()}
-                          </p>
-                          <p className="text-zinc-200 mt-0.5">{rep.message}</p>
-                        </div>
-                        {rep.type === "seo" && rep.message.includes("meta") && (
-                          <button
-                            onClick={() => {
-                              // Trigger automatic fix with custom tags
-                              setDraftFrontMatter(prev => ({
-                                ...prev,
-                                description: draftMarkdown.slice(0, 150).replace(/[#\*_>\[\]!]/g, "") + "..."
-                              }));
-                              setStatusText("Estimated description added to front-matter metadata.");
-                            }}
-                            className="text-[9px] font-elite text-crimson hover:underline shrink-0"
-                          >
-                            AUTO-GEN
-                          </button>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-
-                <div className="mt-4 p-3 bg-zinc-900/40 border border-zinc-800 rounded text-[11px] text-zinc-400 font-sans leading-relaxed">
-                  <span className="font-elite text-crimson block mb-2 leading-none uppercase">
-                    ■ Theme Font Styling Pairing
-                  </span>
-                  Configured Heading Google Font is <strong className="text-zinc-200">{themeConfig.headingFont}</strong> and body is <strong className="text-zinc-200">{themeConfig.bodyFont}</strong>. Set custom configuration from the Settings panel below.
-                </div>
-              </div>
-
-            </div>
-          </div>
-
-          {/* AI Settings Section */}
-          <div className="border-t border-zinc-800 bg-zinc-950/40 p-6">
-            <AISettings
-              settings={aiSettings}
-              onUpdate={(fields) => setAiSettings(prev => ({ ...prev, ...fields }))}
-              openaiKey={openaiKey}
-              onUpdateOpenaiKey={setOpenaiKey}
-            />
-          </div>
+            </>
+          )}
 
         </main>
 
         {/* RIGHT SIDEBAR PANEL: DETAILED METADATA & FRONT-MATTER FORM */}
-        <aside className={`w-80 border-l p-4 flex flex-col gap-6 overflow-y-auto shrink-0 select-none ${
-          themeMode === "warm" ? "border-amber-900/10 bg-[#faf6ee]" : "border-zinc-805 bg-zinc-950"
-        }`}>
-          
-          <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
-            <div className="flex items-center gap-1.5">
-              <SlidersHorizontal className="w-4 h-4 text-crimson" />
-              <span className="font-elite text-xs uppercase tracking-widest text-zinc-300 font-bold">
-                🛠 Front Matter Core
-              </span>
-            </div>
+        {showRightSidebar && (
+          <aside className={`w-80 border-l p-4 flex flex-col gap-6 overflow-y-auto shrink-0 select-none ${
+            themeMode === "warm" ? "border-amber-900/10 bg-[#faf6ee]" : "border-zinc-805 bg-zinc-950"
+          }`}>
             
-            <button
-              onClick={() => setShowRawYAMLEditor(p => !p)}
-              className="text-[9px] font-mono border border-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded hover:text-red-300"
-            >
-              {showRawYAMLEditor ? "LITERAL FIELD" : "RAW YAML"}
-            </button>
-          </div>
-
-          {showRawYAMLEditor ? (
-            <div className="space-y-2">
-              <span className="text-[10px] font-elite text-zinc-500 block uppercase">
-                Raw YAML Key Value Code
-              </span>
-              <textarea
-                value={JSON.stringify(draftFrontMatter, null, 2)}
-                onChange={(e) => {
-                  try {
-                    const parsed = JSON.parse(e.target.value);
-                    setDraftFrontMatter(parsed);
-                    if (parsed.title) setDraftTitle(parsed.title);
-                  } catch (err) {}
-                }}
-                rows={12}
-                className="w-full bg-zinc-950/80 border border-zinc-800 text-zinc-300 font-mono text-[11px] p-2.5 rounded focus:border-crimson outline-none"
-              />
-              <p className="text-[9px] text-zinc-500 italic">
-                * Edit fields inside raw JSON structure notation above.
-              </p>
+            <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+              <div className="flex items-center gap-1.5">
+                <SlidersHorizontal className="w-4 h-4 text-crimson" />
+                <span className="font-elite text-xs uppercase tracking-widest text-zinc-300 font-bold">
+                  🛠 Front Matter Core
+                </span>
+              </div>
+              
+              <button
+                onClick={() => setShowRawYAMLEditor(p => !p)}
+                className="text-[9px] font-mono border border-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded hover:text-red-300"
+              >
+                {showRawYAMLEditor ? "LITERAL FIELD" : "RAW YAML"}
+              </button>
             </div>
-          ) : (
-            <div className="space-y-4">
-              {/* layout */}
-              <div>
-                <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
-                  Page Layout
-                </label>
-                <select
-                  value={draftFrontMatter.layout || "post"}
-                  onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, layout: e.target.value }))}
-                  className="w-full bg-zinc-900 border border-zinc-800 text-zinc-200 font-mono text-xs p-2 rounded focus:border-crimson outline-none cursor-pointer"
-                >
-                  <option value="post">post (Standard blog record)</option>
-                  <option value="page">page (Static standalone site)</option>
-                  <option value="default">default (Main wrapping wrapper)</option>
-                  <option value="home">home (Landing container)</option>
-                </select>
-              </div>
 
-              {/* slug / permalink */}
-              <div>
-                <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
-                  Dynamic URL Path Slug
-                </label>
-                <input
-                  type="text"
-                  value={draftFrontMatter.slug || activePost.slug}
-                  onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, slug: e.target.value }))}
-                  className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
-                  placeholder="slug-value-record"
-                />
-              </div>
-
-              {/* author */}
-              <div>
-                <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
-                  Author Signature
-                </label>
-                <input
-                  type="text"
-                  value={draftFrontMatter.author || ""}
-                  onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, author: e.target.value }))}
-                  className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
-                  placeholder="Oliver Sterling"
-                />
-              </div>
-
-              {/* categories */}
-              <div>
-                <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none flex justify-between">
-                  <span>Categories Array</span>
-                  <span className="font-mono text-[9px] text-zinc-500">Comma split</span>
-                </label>
-                <input
-                  type="text"
-                  value={draftFrontMatter.categories ? draftFrontMatter.categories.join(", ") : ""}
-                  onChange={(e) => handleUpdateArrayField("categories", e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
-                  placeholder="chronicles, web, review"
-                />
-              </div>
-
-              {/* tags */}
-              <div>
-                <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none flex justify-between">
-                  <span>Tags Array</span>
-                  <span className="font-mono text-[9px] text-zinc-500">Comma split</span>
-                </label>
-                <input
-                  type="text"
-                  value={draftFrontMatter.tags ? draftFrontMatter.tags.join(", ") : ""}
-                  onChange={(e) => handleUpdateArrayField("tags", e.target.value)}
-                  className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
-                  placeholder="ink, typewriter, vintage"
-                />
-              </div>
-
-              {/* description / excerpt */}
-              <div>
-                <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
-                  Seo Meta Description
-                </label>
+            {showRawYAMLEditor ? (
+              <div className="space-y-2">
+                <span className="text-[10px] font-elite text-zinc-500 block uppercase">
+                  Raw YAML Key Value Code
+                </span>
                 <textarea
-                  value={draftFrontMatter.description || ""}
-                  onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, description: e.target.value }))}
-                  rows={3}
-                  className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none leading-relaxed"
-                  placeholder="Short, elegant SEO meta summary under 160 chars..."
+                  value={JSON.stringify(draftFrontMatter, null, 2)}
+                  onChange={(e) => {
+                    try {
+                      const parsed = JSON.parse(e.target.value);
+                      setDraftFrontMatter(parsed);
+                      if (parsed.title) setDraftTitle(parsed.title);
+                    } catch (err) {}
+                  }}
+                  rows={12}
+                  className="w-full bg-zinc-950/80 border border-zinc-800 text-zinc-300 font-mono text-[11px] p-2.5 rounded focus:border-crimson outline-none"
                 />
+                <p className="text-[9px] text-zinc-500 italic">
+                  * Edit fields inside raw JSON structure notation above.
+                </p>
               </div>
-
-              {/* featured image path */}
-              <div>
-                <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
-                  Featured Image URL / Rel-path
-                </label>
-                <input
-                  type="text"
-                  value={draftFrontMatter.image || ""}
-                  onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, image: e.target.value }))}
-                  className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
-                  placeholder="assets/images/typewriter.jpg"
-                />
-              </div>
-
-              {/* Dynamic Added Metadata keys */}
-              <div className="pt-2 border-t border-zinc-900">
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-[10px] font-elite text-crimson uppercase">Custom Keys</span>
-                  <button
-                    onClick={() => setShowCustomKeyModal(true)}
-                    className="text-[9px] font-elite border border-dashed border-crimson/40 text-crimson px-2 py-0.5 rounded hover:bg-crimson/5"
+            ) : (
+              <div className="space-y-4">
+                {/* layout */}
+                <div>
+                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
+                    Page Layout
+                  </label>
+                  <select
+                    value={draftFrontMatter.layout || "post"}
+                    onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, layout: e.target.value }))}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-200 font-mono text-xs p-2 rounded focus:border-crimson outline-none cursor-pointer"
                   >
-                    + Add Field
-                  </button>
+                    <option value="post">post (Standard blog record)</option>
+                    <option value="page">page (Static standalone site)</option>
+                    <option value="default">default (Main wrapping wrapper)</option>
+                    <option value="home">home (Landing container)</option>
+                  </select>
                 </div>
 
-                <div className="space-y-2">
-                  {Object.entries(draftFrontMatter)
-                    .filter(([k]) => !["layout", "title", "date", "author", "categories", "tags", "description", "image", "slug"].includes(k))
-                    .map(([key, val]) => (
-                      <div key={key} className="p-2 bg-zinc-900/40 border border-zinc-900 rounded-md flex items-center justify-between">
-                        <div className="font-mono text-[10px] text-zinc-400">
-                          <span className="font-bold text-zinc-300">{key}:</span> {String(val)}
+                {/* slug / permalink */}
+                <div>
+                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
+                    Dynamic URL Path Slug
+                  </label>
+                  <input
+                    type="text"
+                    value={draftFrontMatter.slug || activePost.slug}
+                    onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, slug: e.target.value }))}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
+                    placeholder="slug-value-record"
+                  />
+                </div>
+
+                {/* author */}
+                <div>
+                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
+                    Author Signature
+                  </label>
+                  <input
+                    type="text"
+                    value={draftFrontMatter.author || ""}
+                    onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, author: e.target.value }))}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
+                    placeholder="Oliver Sterling"
+                  />
+                </div>
+
+                {/* categories */}
+                <div>
+                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none flex justify-between">
+                    <span>Categories Array</span>
+                    <span className="font-mono text-[9px] text-zinc-500">Comma split</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={draftFrontMatter.categories ? draftFrontMatter.categories.join(", ") : ""}
+                    onChange={(e) => handleUpdateArrayField("categories", e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
+                    placeholder="chronicles, web, review"
+                  />
+                </div>
+
+                {/* tags */}
+                <div>
+                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none flex justify-between">
+                    <span>Tags Array</span>
+                    <span className="font-mono text-[9px] text-zinc-500">Comma split</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={draftFrontMatter.tags ? draftFrontMatter.tags.join(", ") : ""}
+                    onChange={(e) => handleUpdateArrayField("tags", e.target.value)}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
+                    placeholder="ink, typewriter, vintage"
+                  />
+                </div>
+
+                {/* description / excerpt */}
+                <div>
+                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
+                    Seo Meta Description
+                  </label>
+                  <textarea
+                    value={draftFrontMatter.description || ""}
+                    onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, description: e.target.value }))}
+                    rows={3}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none leading-relaxed"
+                    placeholder="Short, elegant SEO meta summary under 160 chars..."
+                  />
+                </div>
+
+                {/* featured image path */}
+                <div>
+                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
+                    Featured Image URL / Rel-path
+                  </label>
+                  <input
+                    type="text"
+                    value={draftFrontMatter.image || ""}
+                    onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, image: e.target.value }))}
+                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
+                    placeholder="assets/images/typewriter.jpg"
+                  />
+                </div>
+
+                {/* Dynamic Added Metadata keys */}
+                <div className="pt-2 border-t border-zinc-900">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-elite text-crimson uppercase">Custom Keys</span>
+                    <button
+                      onClick={() => setShowCustomKeyModal(true)}
+                      className="text-[9px] font-elite border border-dashed border-crimson/40 text-crimson px-2 py-0.5 rounded hover:bg-crimson/5"
+                    >
+                      + Add Field
+                    </button>
+                  </div>
+
+                  <div className="space-y-2">
+                    {Object.entries(draftFrontMatter)
+                      .filter(([k]) => !["layout", "title", "date", "author", "categories", "tags", "description", "image", "slug"].includes(k))
+                      .map(([key, val]) => (
+                        <div key={key} className="p-2 bg-zinc-900/40 border border-zinc-900 rounded-md flex items-center justify-between">
+                          <div className="font-mono text-[10px] text-zinc-400">
+                            <span className="font-bold text-zinc-300">{key}:</span> {String(val)}
+                          </div>
+                          <button
+                            onClick={() => handleRemoveCustomKey(key)}
+                            className="text-zinc-600 hover:text-crimson font-mono text-[9px]"
+                          >
+                            ✕
+                          </button>
                         </div>
-                        <button
-                          onClick={() => handleRemoveCustomKey(key)}
-                          className="text-zinc-600 hover:text-crimson font-mono text-[9px]"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ))}
+                      ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Site theme configurations */}
+            <div className="mt-auto border-t border-zinc-900 pt-4 space-y-4">
+              <span className="font-elite text-[10px] uppercase tracking-widest text-zinc-500 block leading-none">
+                ■ Active Jekyll Theme Settings
+              </span>
+              
+              <div className="space-y-2 text-xs font-sans">
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Theme Gem:</span>
+                  <span className="font-mono text-crimson">minima</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-500">Build Target:</span>
+                  <span className="font-mono text-zinc-400">GitHub Pages</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[8px] font-mono text-zinc-500 uppercase mb-0.5">Title Font</label>
+                  <select
+                    value={themeConfig.headingFont}
+                    onChange={(e) => setThemeConfig(prev => ({ ...prev, headingFont: e.target.value }))}
+                    className="w-full bg-zinc-900 text-[10px] font-mono p-1 border border-zinc-800 text-zinc-300 rounded outline-none"
+                  >
+                    <option value="Special Elite">Special Elite</option>
+                    <option value="Courier Prime">Courier Prime</option>
+                    <option value="Cinzel">Cinzel</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[8px] font-mono text-zinc-500 uppercase mb-0.5">Body Font</label>
+                  <select
+                    value={themeConfig.bodyFont}
+                    onChange={(e) => setThemeConfig(prev => ({ ...prev, bodyFont: e.target.value }))}
+                    className="w-full bg-zinc-900 text-[10px] font-mono p-1 border border-zinc-800 text-zinc-300 rounded outline-none"
+                  >
+                    <option value="Crimson Pro">Crimson Pro</option>
+                    <option value="Lora">Lora</option>
+                    <option value="Georgia">Georgia</option>
+                  </select>
                 </div>
               </div>
             </div>
-          )}
 
-          {/* Site theme configurations */}
-          <div className="mt-auto border-t border-zinc-900 pt-4 space-y-4">
-            <span className="font-elite text-[10px] uppercase tracking-widest text-zinc-500 block leading-none">
-              ■ Active Jekyll Theme Settings
-            </span>
-            
-            <div className="space-y-2 text-xs font-sans">
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Theme Gem:</span>
-                <span className="font-mono text-crimson">minima</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-zinc-500">Build Target:</span>
-                <span className="font-mono text-zinc-400">GitHub Pages</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block text-[8px] font-mono text-zinc-500 uppercase mb-0.5">Title Font</label>
-                <select
-                  value={themeConfig.headingFont}
-                  onChange={(e) => setThemeConfig(prev => ({ ...prev, headingFont: e.target.value }))}
-                  className="w-full bg-zinc-900 text-[10px] font-mono p-1 border border-zinc-800 text-zinc-300 rounded outline-none"
-                >
-                  <option value="Special Elite">Special Elite</option>
-                  <option value="Courier Prime">Courier Prime</option>
-                  <option value="Cinzel">Cinzel</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[8px] font-mono text-zinc-500 uppercase mb-0.5">Body Font</label>
-                <select
-                  value={themeConfig.bodyFont}
-                  onChange={(e) => setThemeConfig(prev => ({ ...prev, bodyFont: e.target.value }))}
-                  className="w-full bg-zinc-900 text-[10px] font-mono p-1 border border-zinc-800 text-zinc-300 rounded outline-none"
-                >
-                  <option value="Crimson Pro">Crimson Pro</option>
-                  <option value="Lora">Lora</option>
-                  <option value="Georgia">Georgia</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-        </aside>
+          </aside>
+        )}
 
       </div>
 
