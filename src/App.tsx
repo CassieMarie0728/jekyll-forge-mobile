@@ -44,7 +44,12 @@ import {
   SlidersHorizontal,
   FileCode,
   Heart,
-  EyeOff
+  EyeOff,
+  Sun,
+  Moon,
+  GitBranch,
+  GitCommit,
+  ExternalLink
 } from "lucide-react";
 
 import { Repository, JekyllPost, Asset, Snapshot, SEOReportItem } from "./types";
@@ -191,6 +196,22 @@ export default function App() {
   const [selectedRepo, setSelectedRepo] = useState<Repository>(INITIAL_REPOSITORIES[0]);
   const [githubToken, setGithubToken] = useState<string>("");
   const [showGithubSetup, setShowGithubSetup] = useState<boolean>(false);
+  
+  // Git Branches & History Monitor Modal states
+  const [showGitModal, setShowGitModal] = useState<boolean>(false);
+  const [gitBranches, setGitBranches] = useState<{ name: string; protected?: boolean }[]>([]);
+  const [gitCommits, setGitCommits] = useState<{
+    sha: string;
+    commit: {
+      author: { name: string; date: string };
+      message: string;
+    };
+    html_url?: string;
+  }[]>([]);
+  const [gitError, setGitError] = useState<string | null>(null);
+  const [isGitLoading, setIsGitLoading] = useState<boolean>(false);
+  const [isSimulatedData, setIsSimulatedData] = useState<boolean>(false);
+
   const [statusText, setStatusText] = useState<string>("Workspace connected locally");
 
   // Active documents & loading state
@@ -295,6 +316,168 @@ group :jekyll_plugins do
   gem "jekyll-sitemap", "~> 1.4"
 end
 `);
+
+  // Prettify Markdown & Liquid tags
+  const handlePrettifyMarkdown = () => {
+    if (!draftMarkdown) return;
+    setStatusText("Analyzing document structure & aligning Liquid layout tags...");
+
+    let text = draftMarkdown;
+
+    // 1. Normalize line endings
+    text = text.replace(/\r\n/g, "\n");
+
+    // 2. Clean up multiple empty lines (3 or more consecutive newlines -> exactly 2 newlines)
+    text = text.replace(/\n{3,}/g, "\n\n");
+
+    // 3. Spacing around headers
+    // Make sure header markers (#) have exactly 1 space after them, e.g. "##Section" -> "## Section"
+    text = text.replace(/^(#{1,6})([^\s#])(.*)$/gm, "$1 $2$3");
+    // Standardize excessive spaces inside headers, e.g. "##    My Title" -> "## My Title"
+    text = text.replace(/^(#{1,6})\s{2,}(.*)$/gm, "$1 $2");
+
+    // 4. Liquid layout tag alignment
+    // Normalize spaces inside liquid syntax template variables: {{ variable }}
+    text = text.replace(/\{\{\s*(.*?)\s*\}\}/g, (_, p1) => `{{ ${p1.trim()} }}`);
+    // Normalize spaces inside liquid code blocks: {% include footer.html %}
+    text = text.replace(/\{\%\s*(.*?)\s*\%*\}/g, (_, p1) => `{% ${p1.trim()} %}`);
+
+    // 5. Blockquote alignment
+    // Ensure standard spacing for blockquotes and warning panels, e.g. ">[!NOTE]" -> "> [!NOTE]"
+    text = text.replace(/^>\s*(\[[^\]]+\])/gm, "> $1");
+    text = text.replace(/^>([^\s\!\[\n\>].*)$/gm, "> $1");
+
+    // 6. Split and process line by line to clean up trailing whitespaces safely
+    const lines = text.split("\n");
+    const processedLines: string[] = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      let line = lines[i];
+
+      // Trim trailing spaces but preserve double spaces at the end of line if it indicates markdown hard break
+      if (line.endsWith("  ") && line.trim() !== "") {
+        line = line.trimEnd() + "  ";
+      } else {
+        line = line.trimEnd();
+      }
+
+      // Add a blank line before markdown headings for clean formatting (if not already empty and not first line)
+      const isHeading = /^#{1,6}\s+/.test(line);
+      if (isHeading && i > 0 && processedLines.length > 0) {
+        const prevLine = processedLines[processedLines.length - 1];
+        if (prevLine.trim() !== "") {
+          processedLines.push("");
+        }
+      }
+
+      processedLines.push(line);
+    }
+
+    text = processedLines.join("\n");
+
+    // 7. Ensure document trims nicely at boundaries
+    text = text.trim() + "\n";
+
+    setDraftMarkdown(text);
+    setStatusText(`Successfully pretty-formatted Markdown & Liquid alignment!`);
+  };
+
+  // Fetch branch list and commit history from real GitHub API (or back up gracefully with warning)
+  const fetchGitData = async () => {
+    setIsGitLoading(true);
+    setGitError(null);
+    setIsSimulatedData(false);
+
+    try {
+      const headers: Record<string, string> = {
+        "Accept": "application/vnd.github+json"
+      };
+      if (githubToken && githubToken !== "simulated-dev-token") {
+        headers["Authorization"] = `Bearer ${githubToken}`;
+      }
+
+      const branchesUrl = `https://api.github.com/repos/${selectedRepo.owner}/${selectedRepo.name}/branches`;
+      const commitsUrl = `https://api.github.com/repos/${selectedRepo.owner}/${selectedRepo.name}/commits?sha=${encodeURIComponent(selectedRepo.selectedBranch)}&per_page=12`;
+
+      const [branchesRes, commitsRes] = await Promise.all([
+        fetch(branchesUrl, { headers }),
+        fetch(commitsUrl, { headers })
+      ]);
+
+      if (!branchesRes.ok || !commitsRes.ok) {
+        throw new Error(`GitHub responded with branches HTTP ${branchesRes.status} / commits HTTP ${commitsRes.status}`);
+      }
+
+      const branchesData = await branchesRes.json();
+      const commitsData = await commitsRes.json();
+
+      setGitBranches(branchesData);
+      setGitCommits(commitsData);
+      setStatusText(`Fetched live repository branches and commits.`);
+    } catch (err: any) {
+      console.warn("GitHub API rate limit or fallback trigger:", err.message);
+      setGitError(err.message);
+      setIsSimulatedData(true);
+
+      // Create rich mock branches for workspace awareness
+      const mockBranches = [
+        { name: "main", protected: true },
+        { name: "gh-pages", protected: false },
+        { name: "drafts/aesthetic-overhaul", protected: false },
+        { name: "patch/liquid-layout-fix", protected: false }
+      ];
+      
+      // Ensure the selected repository's current branch is always in the list
+      if (!mockBranches.some(b => b.name === selectedRepo.selectedBranch)) {
+        mockBranches.unshift({ name: selectedRepo.selectedBranch, protected: selectedRepo.selectedBranch === "master" || selectedRepo.selectedBranch === "main" });
+      }
+
+      setGitBranches(mockBranches);
+
+      // Create realistic historic commit logs
+      setGitCommits([
+        {
+          sha: "ae13d5baee28c83e89fb2bb5ff8ce0bd67a78e121",
+          commit: {
+            author: { name: "Oliver Sterling", date: new Date(Date.now() - 3600000 * 2.5).toISOString() },
+            message: "Refactored vintage liquid margins, aligned buttons, and added front matter core"
+          }
+        },
+        {
+          sha: "8db3e9ecca018747f3ae0f9df504ce8e1a7888de7",
+          commit: {
+            author: { name: "Gemini Writer Assistant", date: new Date(Date.now() - 3600000 * 22).toISOString() },
+            message: "Automated SEO meta description injections and Jekyll layout validation rules"
+          }
+        },
+        {
+          sha: "4fbcde037748ca09e74bb7c71629d8a3910ee241b",
+          commit: {
+            author: { name: "Oliver Sterling", date: new Date(Date.now() - 3600000 * 45).toISOString() },
+            message: "Initial repository snapshot imported with classic minima styles"
+          }
+        }
+      ]);
+      setStatusText("Fetched repository workspace layout (simulated offline mode).");
+    } finally {
+      setIsGitLoading(false);
+    }
+  };
+
+  // Switch repo branches
+  const handleSwitchRepositoryBranch = (branchName: string) => {
+    const updated = { ...selectedRepo, selectedBranch: branchName };
+    setSelectedRepo(updated);
+    setRepositories(prev => prev.map(r => r.name === selectedRepo.name ? updated : r));
+    setStatusText(`Active branch target set to: ${branchName}`);
+  };
+
+  // Re-fetch git details when opening the modal or selecting branch
+  useEffect(() => {
+    if (showGitModal) {
+      fetchGitData();
+    }
+  }, [showGitModal, selectedRepo.name, selectedRepo.selectedBranch, githubToken]);
 
   // Auto-save trigger
   useEffect(() => {
@@ -669,50 +852,28 @@ jobs:
   });
 
   return (
-    <div className={`min-h-screen flex flex-col transition-colors duration-200 ${
+    <div className={`min-h-screen max-w-full overflow-x-hidden flex flex-col transition-colors duration-200 ${
       themeMode === "warm" ? "bg-[#fbf9f4] text-[#2c2421]" : "bg-zinc-950 text-zinc-100"
     }`}>
       
       {/* 1. TOP HEADER NAVIGATION BAR */}
-      <header className={`border-b flex items-center justify-between px-4 py-3 shrink-0 ${
+      <header className={`border-b flex items-center justify-between px-4 py-3 shrink-0 gap-2 overflow-hidden ${
         themeMode === "warm" ? "border-amber-900/10 bg-[#f7f2ea]" : "border-zinc-800 bg-zinc-950"
       }`}>
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="grungy-stamp border-crimson text-crimson text-[11px] font-bold tracking-widest bg-crimson/5">
+        <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <span className="grungy-stamp border-crimson text-crimson text-[10px] sm:text-[11px] font-bold tracking-widest bg-crimson/5 shrink-0 mr-1 sm:mr-2">
               JEKYLL FORGE
             </span>
-            <div className={`h-4 w-[1px] ${themeMode === "warm" ? "bg-amber-950/20" : "bg-zinc-800"}`}></div>
-            <span className="font-sans text-xs font-medium opacity-75 hidden md:inline">
+            <div className={`h-4 w-[1px] ${themeMode === "warm" ? "bg-amber-955/20" : "bg-zinc-800"} hidden xs:block`}></div>
+            <span className="font-sans text-xs font-medium opacity-75 hidden xl:inline shrink-0">
               GitHub-Powered Vintage Press
             </span>
-            <div className={`h-4 w-[1px] ${themeMode === "warm" ? "bg-amber-950/20" : "bg-zinc-800"} hidden md:block`}></div>
-            <button
-              onClick={() => setShowLeftSidebar(!showLeftSidebar)}
-              title={showLeftSidebar ? "Collapse Files Menu" : "Expand Files Menu"}
-              className={`p-1.5 rounded border flex items-center gap-1.5 text-xs transition-colors cursor-pointer ${
-                themeMode === "warm" 
-                  ? "bg-[#faf6ee] border-amber-950/20 text-neutral-600 hover:bg-[#eae3d5]" 
-                  : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 focus:border-crimson"
-              }`}
-            >
-              {showLeftSidebar ? (
-                <>
-                  <EyeOff className="w-3.5 h-3.5 text-zinc-500" />
-                  <span className="hidden sm:inline font-elite text-[10px] leading-none">Hide Files</span>
-                </>
-              ) : (
-                <>
-                  <Eye className="w-3.5 h-3.5 text-crimson animate-pulse" />
-                  <span className="font-elite text-[10px] text-crimson font-bold leading-none">Show Files</span>
-                </>
-              )}
-            </button>
           </div>
 
           {/* Repository Dropdown Selector */}
-          <div className="flex items-center gap-1.5 ml-2">
-            <Folder className="w-4 h-4 text-crimson opacity-80" />
+          <div className="flex items-center gap-1 ml-1 sm:ml-2 min-w-0">
+            <Folder className="w-3.5 h-3.5 text-crimson opacity-80 shrink-0 hidden xs:inline-block" />
             <select
               value={selectedRepo.name}
               onChange={(e) => {
@@ -722,9 +883,9 @@ jobs:
                   setStatusText(`Mounted repository instance: ${target.name}`);
                 }
               }}
-              className={`text-xs font-elite px-2 py-1 rounded border outline-none cursor-pointer ${
+              className={`text-xs font-sans font-medium px-1.5 py-1 rounded border outline-none cursor-pointer max-w-[100px] sm:max-w-[160px] md:max-w-xs truncate shrink ${
                 themeMode === "warm" 
-                  ? "bg-[#faf6ee] border-amber-950/15 text-amber-950" 
+                  ? "bg-[#faf6ee] border-amber-955/15 text-amber-950" 
                   : "bg-zinc-900 border-zinc-800 text-zinc-200 focus:border-crimson"
               }`}
             >
@@ -732,86 +893,71 @@ jobs:
                 <option key={r.name} value={r.name}>{r.owner}/{r.name}</option>
               ))}
             </select>
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-crimson/10 text-crimson tracking-wider">
-              {selectedRepo.selectedBranch}
-            </span>
+            <button
+              onClick={() => setShowGitModal(true)}
+              title="Inspect Remote Branches & Recent Commit Logs"
+              className="text-[10px] font-mono px-2 py-0.5 rounded bg-crimson/10 hover:bg-crimson/20 border border-crimson/15 text-crimson tracking-wider shrink-0 hidden sm:flex items-center gap-1 cursor-pointer transition-colors font-semibold"
+            >
+              <GitBranch className="w-3 h-3 text-crimson" />
+              <span>{selectedRepo.selectedBranch}</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Toggle Right Sidebar (Front Matter) */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* Aesthetic Compact Theme Switcher Button */}
           <button
-            onClick={() => setShowRightSidebar(!showRightSidebar)}
-            title={showRightSidebar ? "Collapse Front Matter Editor" : "Expand Front Matter Editor"}
-            className={`p-1.5 rounded border flex items-center gap-1.5 text-xs transition-colors cursor-pointer ${
+            onClick={() => setThemeMode(themeMode === "warm" ? "dark" : "warm")}
+            title={themeMode === "warm" ? "Switch to Monochrome Ink theme" : "Switch to Classic Cream theme"}
+            className={`p-1.5 rounded border flex items-center gap-1 text-xs transition-colors cursor-pointer shrink-0 ${
               themeMode === "warm" 
                 ? "bg-[#faf6ee] border-amber-950/20 text-neutral-600 hover:bg-[#eae3d5]" 
-                : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 focus:border-crimson"
+                : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800"
             }`}
           >
-            {showRightSidebar ? (
+            {themeMode === "warm" ? (
               <>
-                <EyeOff className="w-3.5 h-3.5 text-zinc-500" />
-                <span className="hidden sm:inline font-elite text-[10px] leading-none">Hide Front Matter</span>
+                <Moon className="w-3.5 h-3.5 text-crimson" />
+                <span className="hidden md:inline font-elite text-[10px]">Ink</span>
               </>
             ) : (
               <>
-                <SlidersHorizontal className="w-3.5 h-3.5 text-crimson animate-pulse" />
-                <span className="font-elite text-[10px] text-crimson font-bold leading-none">Show Front Matter</span>
+                <Sun className="w-3.5 h-3.5 text-amber-500" />
+                <span className="hidden md:inline font-elite text-[10px]">Cream</span>
               </>
             )}
           </button>
 
-          {/* Quick theme toggler */}
-          <div className="flex items-center rounded-lg border border-dashed border-crimson/20 p-0.5">
-            <button
-              onClick={() => setThemeMode("warm")}
-              className={`px-2 py-1 rounded text-xs font-elite transition-colors ${
-                themeMode === "warm" ? "bg-crimson text-white" : "text-zinc-500 hover:text-zinc-300"
-              }`}
-            >
-              Classic Cream
-            </button>
-            <button
-              onClick={() => setThemeMode("dark")}
-              className={`px-2 py-1 rounded text-xs font-elite transition-colors ${
-                themeMode === "dark" ? "bg-crimson text-white" : "text-zinc-500 hover:text-zinc-700"
-              }`}
-            >
-              Monochrome Ink
-            </button>
-          </div>
-
           <button
             onClick={() => setShowCommandPalette(true)}
             title="Search Actions (Ctrl + K)"
-            className={`p-1.5 rounded border flex items-center gap-1 text-xs transition-colors ${
+            className={`p-1.5 rounded border flex items-center gap-1 text-xs transition-colors cursor-pointer shrink-0 ${
               themeMode === "warm" 
                 ? "bg-[#faf6ee] border-amber-950/20 text-neutral-600 hover:bg-[#eae3d5]" 
                 : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800"
             }`}
           >
             <Command className="w-3.5 h-3.5 text-crimson" />
-            <kbd className="text-[9px] opacity-70">⌘K</kbd>
+            <kbd className="text-[9px] opacity-70 hidden md:inline-block">⌘K</kbd>
           </button>
 
           {/* GitHub Connection Modal launcher */}
           <button
             onClick={() => setShowGithubSetup(prev => !prev)}
-            className={`font-elite text-xs py-1.5 px-3 rounded flex items-center gap-1.5 cursor-pointer border ${
+            className={`font-elite text-xs py-1.5 px-2 rounded flex items-center gap-1 cursor-pointer border shrink-0 ${
               githubToken 
                 ? "bg-emerald-950/20 border-emerald-800/50 text-emerald-400" 
                 : "bg-crimson hover:bg-crimson-hover text-white border-transparent"
             }`}
           >
-            <Globe className="w-3.5 h-3.5" />
-            <span>{githubToken ? "Connected Account" : "Access Credentials"}</span>
+            <Globe className="w-3.5 h-3.5 shrink-0" />
+            <span className="hidden lg:inline">{githubToken ? "Connected" : "Credentials"}</span>
           </button>
 
           {/* Download Local Backup (JSON) */}
           <button
             onClick={handleDownloadZIPPackage}
-            className={`p-1.5 rounded border transition-all hover:text-crimson ${
+            className={`p-1.5 rounded border transition-all hover:text-crimson shrink-0 cursor-pointer ${
               themeMode === "warm" ? "border-amber-950/20 text-amber-950 bg-[#faf6ee]" : "border-zinc-800 text-zinc-300 bg-zinc-900"
             }`}
             title="Download full Jekyll export payload"
@@ -822,10 +968,11 @@ jobs:
           {/* Commit & Publish Trigger */}
           <button
             onClick={handlePublishFile}
-            className="bg-transparent border-2 border-dashed border-crimson text-crimson hover:bg-crimson hover:text-white transition-colors py-1.5 px-4 rounded-md font-elite text-xs flex items-center gap-2 cursor-pointer"
+            className="bg-transparent border-2 border-dashed border-crimson text-crimson hover:bg-crimson hover:text-white transition-colors py-1.5 px-2.5 sm:px-3 md:px-4 rounded-md font-elite text-xs flex items-center gap-1.5 cursor-pointer shrink-0"
           >
-            <ShieldCheck className="w-4 h-4" />
-            <span>Publish To Live Pages</span>
+            <ShieldCheck className="w-4 h-4 text-crimson" />
+            <span className="hidden md:inline">Publish Pages</span>
+            <span className="inline md:hidden">Publish</span>
           </button>
         </div>
       </header>
@@ -889,10 +1036,12 @@ jobs:
                   <button
                     key={tab}
                     onClick={() => setActiveFileTab(tab)}
-                    className={`flex-1 py-2 font-elite text-[10px] uppercase tracking-wider transition-colors border-b-2 ${
+                    className={`flex-1 py-1 px-1.5 font-elite text-[10px] uppercase tracking-wider transition-all border-b-2 ${
                       activeFileTab === tab
                         ? "border-crimson text-crimson font-bold"
-                        : "border-transparent text-zinc-500 hover:text-zinc-300"
+                        : `border-transparent hover:text-crimson ${
+                            themeMode === "warm" ? "text-amber-955/70" : "text-zinc-500 hover:text-zinc-300"
+                          }`
                     }`}
                   >
                     {tab}
@@ -906,7 +1055,9 @@ jobs:
                 {/* Category: Posts & Drafts */}
                 {activeFileTab === "posts" && (
                   <>
-                    <div className="text-[10px] uppercase tracking-wider text-zinc-500 px-2 pt-2 font-elite">
+                    <div className={`text-[10px] uppercase tracking-wider px-2 pt-2 font-elite ${
+                      themeMode === "warm" ? "text-neutral-600" : "text-zinc-500"
+                    }`}>
                       Active Jekyll Repository Records
                     </div>
                     {filteredPosts.length === 0 ? (
@@ -919,8 +1070,12 @@ jobs:
                             key={post.path}
                             className={`group w-full text-left p-2.5 rounded-md cursor-pointer transition-all border flex flex-col gap-1 ${
                               isSelected
-                                ? "bg-crimson/5 border-crimson text-red-100"
-                                : "border-transparent text-zinc-400 hover:bg-zinc-900/30 hover:text-zinc-200"
+                                ? (themeMode === "warm" 
+                                    ? "bg-crimson/5 border-crimson text-crimson font-bold shadow-inner" 
+                                    : "bg-crimson/5 border-crimson text-red-101")
+                                : (themeMode === "warm" 
+                                    ? "border-transparent text-neutral-800 hover:bg-amber-900/5 hover:text-amber-955 font-medium" 
+                                    : "border-transparent text-zinc-400 hover:bg-zinc-900/30 hover:text-zinc-202")
                             }`}
                             onClick={() => handleSelectPost(post)}
                           >
@@ -941,9 +1096,15 @@ jobs:
                               </button>
                             </div>
                             
-                            <div className="flex items-center justify-between text-[9px] font-mono text-zinc-500">
+                            <div className={`flex items-center justify-between text-[9px] font-mono ${
+                              themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"
+                            }`}>
                               <span>{post.filename.slice(0, 10)}</span>
-                              <span className="px-1.5 py-0.2 rounded bg-zinc-900 border border-zinc-800 text-zinc-400 uppercase">
+                              <span className={`px-1.5 py-0.2 rounded uppercase border ${
+                                themeMode === "warm" 
+                                  ? "bg-[#faf6ee] border-amber-955/20 text-neutral-700" 
+                                  : "bg-[#111] border-zinc-c80 text-zinc-400"
+                              }`}>
                                 {post.frontMatter.layout || "post"}
                               </span>
                             </div>
@@ -957,7 +1118,9 @@ jobs:
                 {/* Category: Media Assets Asset list */}
                 {activeFileTab === "assets" && (
                   <div className="p-2 space-y-3">
-                    <div className="border border-dashed border-zinc-800 p-4 rounded-lg bg-zinc-950/50 text-center relative">
+                    <div className={`border border-dashed p-4 rounded-lg text-center relative ${
+                      themeMode === "warm" ? "border-amber-955/35 bg-[#faf6ee]" : "border-zinc-800 bg-zinc-950/50"
+                    }`}>
                       <input
                         type="file"
                         accept="image/*"
@@ -965,19 +1128,31 @@ jobs:
                         className="absolute inset-0 opacity-0 cursor-pointer w-full"
                       />
                       <Upload className="w-6 h-6 text-crimson mx-auto mb-1 animate-bounce" />
-                      <span className="text-[10px] font-elite block text-zinc-400 uppercase">Optimize Asset</span>
-                      <span className="text-[8px] text-zinc-600 block mt-0.5">Drag-and-drop auto WEBP conversions</span>
+                      <span className={`text-[10px] font-elite block uppercase ${
+                        themeMode === "warm" ? "text-neutral-800" : "text-zinc-400"
+                      }`}>Optimize Asset</span>
+                      <span className={`text-[8px] block mt-0.5 ${
+                        themeMode === "warm" ? "text-neutral-500" : "text-zinc-600"
+                      }`}>Drag-and-drop auto WEBP conversions</span>
                     </div>
 
                     <div className="space-y-2">
-                      <span className="text-[10px] font-elite text-zinc-500 uppercase block border-b border-zinc-900 pb-1">
+                      <span className={`text-[10px] font-elite uppercase block border-b pb-1 ${
+                        themeMode === "warm" ? "border-amber-955/10 text-neutral-600" : "border-zinc-900 text-zinc-500"
+                      }`}>
                         ■ Current Assets Catalog (/assets/images/)
                       </span>
                       {assets.map((asset) => (
-                        <div key={asset.path} className="p-2 border border-zinc-900 bg-zinc-900/40 rounded flex items-center gap-2">
+                        <div key={asset.path} className={`p-2 border rounded flex items-center gap-2 ${
+                          themeMode === "warm" ? "border-amber-955/15 bg-[#faf6ee]" : "border-zinc-900 bg-zinc-900/40"
+                        }`}>
                           <img src={asset.url} alt={asset.alt} className="w-10 h-10 object-cover rounded bg-zinc-950" />
-                          <div className="flex-1 min-w-0 font-mono text-[9px] text-zinc-400">
-                            <p className="truncate text-zinc-300 font-bold">{asset.name}</p>
+                          <div className={`flex-1 min-w-0 font-mono text-[9px] ${
+                            themeMode === "warm" ? "text-neutral-700" : "text-zinc-400"
+                          }`}>
+                            <p className={`truncate font-bold ${
+                              themeMode === "warm" ? "text-amber-950" : "text-zinc-300"
+                            }`}>{asset.name}</p>
                             <p>{Math.round((asset.size || 0) / 1024)} KB • {asset.mimeType}</p>
                           </div>
                           <button
@@ -1001,26 +1176,38 @@ jobs:
                 {activeFileTab === "config" && (
                   <div className="p-2 space-y-4">
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between text-zinc-500 font-elite text-[10px]">
+                      <div className={`flex items-center justify-between font-elite text-[10px] ${
+                        themeMode === "warm" ? "text-neutral-600" : "text-zinc-500"
+                      }`}>
                         <span>_CONFIG.YML EDITOR</span>
-                        <span className="font-mono text-emerald-400 text-[8px]">ACTIVE</span>
+                        <span className="font-mono text-emerald-500 font-bold text-[8px]">ACTIVE</span>
                       </div>
                       <textarea
                         value={configYmlContent}
                         onChange={(e) => setConfigYmlContent(e.target.value)}
                         rows={8}
-                        className="w-full bg-zinc-950/80 border border-zinc-800 text-zinc-300 font-mono text-[11px] p-2 rounded focus:border-crimson outline-none leading-relaxed"
+                        className={`w-full font-mono text-[11px] p-2 rounded focus:border-crimson outline-none leading-relaxed border ${
+                          themeMode === "warm" 
+                            ? "bg-[#faf6ee] border-amber-955/20 text-neutral-850" 
+                            : "bg-zinc-950/80 border-zinc-800 text-zinc-300"
+                        }`}
                       />
                       <button
                         onClick={() => alert("Simulated config commit successfully written to repository core!")}
-                        className="w-full py-1 bg-zinc-900 border border-zinc-800 hover:border-zinc-700 text-zinc-200 font-elite text-[10px] rounded"
+                        className={`w-full py-1 font-elite text-[10px] rounded border transition-colors ${
+                          themeMode === "warm" 
+                            ? "bg-[#faf6ee] border-amber-955/20 hover:bg-[#eae3d5] text-neutral-850" 
+                            : "bg-zinc-900 border-zinc-800 hover:border-zinc-700 text-zinc-200"
+                        }`}
                       >
                         Save Configuration Settings
                       </button>
                     </div>
 
                     <div className="space-y-2">
-                      <div className="flex items-center justify-between text-zinc-500 font-elite text-[10px]">
+                      <div className={`flex items-center justify-between font-elite text-[10px] ${
+                        themeMode === "warm" ? "text-neutral-600" : "text-zinc-500"
+                      }`}>
                         <span>GEMFILE (DEPS MANIFEST)</span>
                         <span className="font-mono text-zinc-500 text-[8px]">LOCK</span>
                       </div>
@@ -1028,7 +1215,11 @@ jobs:
                         value={gemfileContent}
                         onChange={(e) => setGemfileContent(e.target.value)}
                         rows={5}
-                        className="w-full bg-zinc-950/80 border border-zinc-800 text-zinc-300 font-mono text-[11px] p-2 rounded focus:border-crimson outline-none leading-relaxed"
+                        className={`w-full font-mono text-[11px] p-2 rounded focus:border-crimson outline-none leading-relaxed border ${
+                          themeMode === "warm" 
+                            ? "bg-[#faf6ee] border-amber-955/20 text-neutral-850" 
+                            : "bg-zinc-950/80 border-zinc-800 text-zinc-300"
+                        }`}
                       />
                     </div>
                   </div>
@@ -1046,16 +1237,22 @@ jobs:
 
                     <div className="space-y-2">
                       {plugins.map((p) => (
-                        <div key={p.name} className="p-2.5 border border-zinc-900 bg-zinc-900/30 rounded-lg space-y-1.5">
+                        <div key={p.name} className={`p-2.5 border rounded-lg space-y-1.5 ${
+                          themeMode === "warm" ? "border-amber-955/15 bg-[#faf6ee]" : "border-zinc-900 bg-zinc-900/30"
+                        }`}>
                           <div className="flex items-center justify-between">
-                            <span className="font-mono text-[11px] font-bold text-zinc-300">{p.name}</span>
+                            <span className={`font-mono text-[11px] font-bold ${
+                              themeMode === "warm" ? "text-amber-950" : "text-zinc-300"
+                            }`}>{p.name}</span>
                             <span className={`text-[8px] font-elite px-1 rounded ${
                               p.pagesSupported ? "bg-emerald-950 text-emerald-400" : "bg-amber-950 text-amber-500"
                             }`}>
                               {p.pagesSupported ? "Pages Safe" : "Actions req."}
                             </span>
                           </div>
-                          <p className="text-[10px] text-zinc-500 leading-normal">{p.description}</p>
+                          <p className={`text-[10px] leading-normal ${
+                            themeMode === "warm" ? "text-neutral-700" : "text-zinc-500"
+                          }`}>{p.description}</p>
                           <div className="flex items-center justify-between pt-1">
                             <span className="text-[9px] text-zinc-600 font-mono">Status</span>
                             <button
@@ -1087,7 +1284,9 @@ jobs:
 
             {/* Section C: Snapshots & Offline draft backup history */}
             <div className="p-4 flex-1 flex flex-col min-h-[180px]">
-              <span className="font-elite text-[10px] uppercase tracking-widest text-zinc-500 block mb-2">
+              <span className={`font-elite text-[10px] uppercase tracking-widest block mb-2 ${
+                themeMode === "warm" ? "text-neutral-600" : "text-zinc-500"
+              }`}>
                 ■ SNAPSHOT RESTORE POINTS
               </span>
               <div className="space-y-2 overflow-y-auto flex-1 max-h-48 pr-1">
@@ -1095,19 +1294,29 @@ jobs:
                   <div
                     key={snap.id}
                     onClick={() => handleRestoreSnapshot(snap)}
-                    className="p-2 bg-zinc-900/50 border border-zinc-900 rounded-lg hover:border-zinc-700 cursor-pointer text-left transition-all"
+                    className={`p-2 border rounded-lg cursor-pointer text-left transition-all ${
+                      themeMode === "warm"
+                        ? "bg-[#faf6ee] border-amber-955/20 hover:border-crimson text-amber-950 shadow-inner"
+                        : "bg-zinc-900/50 border-zinc-900 hover:border-zinc-700 text-zinc-300"
+                    }`}
                   >
                     <div className="flex items-center justify-between mb-0.5 text-[9px] font-mono">
                       <span className={`font-semibold ${snap.reason === "autosave" ? "text-amber-500" : "text-crimson"}`}>
                         {snap.reason.toUpperCase()}
                       </span>
-                      <span className="text-zinc-500">{new Date(snap.createdAt).toLocaleTimeString()}</span>
+                      <span className={themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"}>
+                        {new Date(snap.createdAt).toLocaleTimeString()}
+                      </span>
                     </div>
-                    <p className="text-[10px] text-zinc-400 font-elite truncate">{snap.label}</p>
+                    <p className={`text-[10px] font-elite truncate ${
+                      themeMode === "warm" ? "text-amber-950" : "text-zinc-400"
+                    }`}>{snap.label}</p>
                   </div>
                 ))}
               </div>
-              <div className="pt-2 text-[9px] text-zinc-600 font-mono leading-normal text-center">
+              <div className={`pt-2 text-[9px] font-mono leading-normal text-center ${
+                themeMode === "warm" ? "text-neutral-500" : "text-zinc-650"
+              }`}>
                 * Local changes saved to memory. Revert timeline at any time.
               </div>
             </div>
@@ -1116,14 +1325,14 @@ jobs:
         )}
 
         {/* CENTER STAGE: VISUAL WYSIWYG & CODE EDITOR */}
-        <main className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+        <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
           
           {/* Editor Header controls bar */}
-          <div className={`px-4 py-2 border-b flex items-center justify-between select-none ${
+          <div className={`px-4 py-2 border-b flex flex-col lg:flex-row lg:items-center justify-between select-none gap-3 ${
             themeMode === "warm" ? "border-amber-900/10 bg-[#f7f2ea]" : "border-zinc-800 bg-zinc-950"
           }`}>
-            <div className="flex items-center gap-2">
-              <span className="font-elite text-xs text-zinc-500">CANVAS STAGE:</span>
+            <div className="flex items-center gap-2 min-w-0 flex-grow">
+              <span className="font-elite text-xs text-zinc-500 shrink-0">CANVAS STAGE:</span>
               <input
                 type="text"
                 value={draftTitle}
@@ -1131,43 +1340,82 @@ jobs:
                   setDraftTitle(e.target.value);
                   setDraftFrontMatter(prev => ({ ...prev, title: e.target.value }));
                 }}
-                className={`font-elite text-sm font-bold bg-transparent border-b border-dashed border-zinc-700/50 outline-none text-red-100 px-1 py-0.5 min-w-[200px] sm:min-w-[320px] focus:border-crimson`}
+                className={`font-elite text-sm font-bold bg-transparent border-b border-dashed outline-none px-1 py-0.5 w-full min-w-0 ${
+                  themeMode === "warm" 
+                    ? "border-amber-900/15 text-amber-950 focus:border-crimson" 
+                    : "border-zinc-700/50 text-red-100 focus:border-crimson"
+                }`}
                 placeholder="Blog post dynamic heading..."
               />
             </div>
 
-            {/* Visual formatting buttons */}
-            <div className="flex items-center gap-1">
+            {/* Visual formatting and toggle buttons */}
+            <div className="flex items-center gap-1.5 shrink-0 justify-start lg:justify-end flex-wrap">
               {/* Active editing mode selector */}
               {["visual", "raw", "split"].map((m) => (
                 <button
                   key={m}
                   onClick={() => setEditorMode(m as any)}
-                  className={`px-3 py-1 rounded text-xs font-elite capitalize transition-all cursor-pointer ${
+                  className={`px-2.5 py-1 rounded text-xs font-elite capitalize transition-all cursor-pointer shrink-0 ${
                     editorMode === m
                       ? "bg-crimson text-white font-bold"
                       : "text-zinc-500 hover:text-zinc-300"
                   }`}
                 >
-                  {m} Editor
+                  {m}
                 </button>
               ))}
 
-              <div className={`h-4 w-[1px] mx-1.5 ${themeMode === "warm" ? "bg-amber-955/20" : "bg-zinc-800"}`}></div>
+              <div className={`h-4 w-[1px] mx-1 ${themeMode === "warm" ? "bg-amber-900/20" : "bg-zinc-800"} shrink-0`} division-line="true"></div>
 
+              {/* Toggle Files Left Sidebar */}
               <button
-                onClick={() => setShowBottomPanel(!showBottomPanel)}
-                title={showBottomPanel ? "Hide Bottom Utilities & AI Assistant" : "Show Bottom Utilities & AI Assistant"}
-                className={`px-2.5 py-1 rounded border transition-colors cursor-pointer text-xs ${
+                onClick={() => setShowLeftSidebar(!showLeftSidebar)}
+                title={showLeftSidebar ? "Hide Files Menu" : "Show Files Menu"}
+                className={`px-2.5 py-1 rounded border transition-colors cursor-pointer text-xs shrink-0 ${
                   themeMode === "warm" 
                     ? "bg-[#faf6ee] border-amber-950/20 text-neutral-600 hover:bg-[#eae3d5]" 
                     : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 focus:border-crimson"
                 }`}
               >
-                {showBottomPanel ? (
-                  <span className="font-elite text-[10px] text-zinc-400">Hide Utilities</span>
+                {showLeftSidebar ? (
+                  <span className={`font-elite text-[10px] ${themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-500"}`}>Hide Files</span>
                 ) : (
-                  <span className="font-elite text-[10px] text-crimson font-semibold">Show Utilities</span>
+                  <span className="font-elite text-[10px] text-crimson font-bold">Show Files</span>
+                )}
+              </button>
+
+              {/* Toggle Front Matter Right Sidebar */}
+              <button
+                onClick={() => setShowRightSidebar(!showRightSidebar)}
+                title={showRightSidebar ? "Hide Front Matter Core Panel" : "Show Front Matter Core Panel"}
+                className={`px-2.5 py-1 rounded border transition-colors cursor-pointer text-xs shrink-0 ${
+                  themeMode === "warm" 
+                    ? "bg-[#faf6ee] border-amber-955/20 text-neutral-600 hover:bg-[#eae3d5]" 
+                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 focus:border-crimson"
+                }`}
+              >
+                {showRightSidebar ? (
+                  <span className={`font-elite text-[10px] ${themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-500"}`}>Hide Front Matter</span>
+                ) : (
+                  <span className="font-elite text-[10px] text-crimson font-bold">Show Front Matter</span>
+                )}
+              </button>
+
+              {/* Toggle Bottom Utilities Panel */}
+              <button
+                onClick={() => setShowBottomPanel(!showBottomPanel)}
+                title={showBottomPanel ? "Hide Bottom Utilities & AI Assistant" : "Show Bottom Utilities & AI Assistant"}
+                className={`px-2.5 py-1 rounded border transition-colors cursor-pointer text-xs shrink-0 ${
+                  themeMode === "warm" 
+                    ? "bg-[#faf6ee] border-amber-955/20 text-neutral-600 hover:bg-[#eae3d5]" 
+                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 focus:border-crimson"
+                }`}
+              >
+                {showBottomPanel ? (
+                  <span className={`font-elite text-[10px] ${themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-500"}`}>Hide Utilities</span>
+                ) : (
+                  <span className="font-elite text-[10px] text-crimson font-bold">Show Utilities</span>
                 )}
               </button>
             </div>
@@ -1180,63 +1428,112 @@ jobs:
             <div className={`h-full flex flex-col overflow-y-auto ${
               editorMode === "raw" ? "lg:col-span-12" : editorMode === "visual" ? "lg:col-span-12" : "lg:col-span-6"
             }`}>
-              
               {/* Mini Toolbar for formatting */}
-              <div className="p-2 border-b border-zinc-800 bg-zinc-950/20 flex gap-1 items-center flex-wrap shrink-0">
+              <div className={`p-2 border-b flex gap-1 items-center flex-wrap shrink-0 ${
+                themeMode === "warm" ? "border-amber-955/15 bg-[#f7f2ea]" : "border-zinc-800 bg-zinc-950/20"
+              }`}>
                 <button
                   onClick={() => setDraftMarkdown(p => p + "\n\n## Section Head")}
-                  className="p-1 text-xs hover:text-crimson font-elite border border-zinc-900 rounded bg-zinc-900/50"
+                  className={`p-1 text-xs font-elite border rounded ${
+                    themeMode === "warm" 
+                      ? "bg-[#faf6ee] border-amber-955/25 text-neutral-800 hover:bg-[#eae3d5]" 
+                      : "bg-zinc-900/50 border-zinc-900 text-zinc-300 hover:text-crimson"
+                  }`}
                   title="Insert Header"
                 >
                   H2
                 </button>
                 <button
                   onClick={() => setDraftMarkdown(p => p + " **bold_text**")}
-                  className="p-1 text-xs hover:text-crimson font-elite border border-zinc-900 rounded bg-zinc-900/50"
+                  className={`p-1 text-xs font-elite border rounded ${
+                    themeMode === "warm" 
+                      ? "bg-[#faf6ee] border-amber-955/25 text-neutral-800 hover:bg-[#eae3d5]" 
+                      : "bg-zinc-900/50 border-zinc-900 text-zinc-300 hover:text-crimson"
+                  }`}
                   title="Make bold"
                 >
                   B
                 </button>
                 <button
                   onClick={() => setDraftMarkdown(p => p + " *italic_text*")}
-                  className="p-1 text-xs hover:text-crimson font-elite border border-zinc-900 rounded bg-zinc-900/50"
+                  className={`p-1 text-xs font-elite border rounded ${
+                    themeMode === "warm" 
+                      ? "bg-[#faf6ee] border-amber-955/25 text-neutral-800 hover:bg-[#eae3d5]" 
+                      : "bg-zinc-900/50 border-zinc-900 text-zinc-300 hover:text-crimson"
+                  }`}
                   title="Make italic"
                 >
                   I
                 </button>
                 <button
                   onClick={() => setDraftMarkdown(p => p + "\n*   Item 1\n*   Item 2")}
-                  className="p-1 text-xs hover:text-crimson font-elite border border-zinc-900 rounded bg-zinc-900/50"
+                  className={`p-1 text-xs font-elite border rounded ${
+                    themeMode === "warm" 
+                      ? "bg-[#faf6ee] border-amber-955/25 text-neutral-800 hover:bg-[#eae3d5]" 
+                      : "bg-zinc-900/50 border-zinc-900 text-zinc-300 hover:text-crimson"
+                  }`}
                   title="Insert Bullet List"
                 >
                   List
                 </button>
                 <button
                   onClick={() => setDraftMarkdown(p => p + "\n> [!NOTE]\n> Typographical editorial box.")}
-                  className="p-1 text-[10px] hover:text-crimson font-elite border border-zinc-900 rounded bg-zinc-900/50 text-crimson"
+                  className={`p-1 text-[10px] font-elite border rounded ${
+                    themeMode === "warm" 
+                      ? "bg-crimson/5 border-crimson/30 text-crimson font-bold hover:bg-crimson/10" 
+                      : "bg-zinc-900/50 border-zinc-900 text-crimson hover:text-crimson-hover"
+                  }`}
                   title="Insert Note Callout Block"
                 >
                   Note Box
                 </button>
                 <button
                   onClick={() => setDraftMarkdown(p => p + "\n| Topic | Value | \n|---|---| \n| Item | Description |")}
-                  className="p-1 text-xs hover:text-crimson font-elite border border-zinc-910 rounded bg-zinc-900/50"
+                  className={`p-1 text-xs font-elite border rounded ${
+                    themeMode === "warm" 
+                      ? "bg-[#faf6ee] border-amber-955/25 text-neutral-850 hover:bg-[#eae3d5]" 
+                      : "bg-zinc-900/50 border-zinc-910 text-zinc-300 hover:text-crimson"
+                  }`}
                   title="Insert Table grid"
                 >
                   Table
                 </button>
                 <button
                   onClick={() => setDraftMarkdown(p => p + "\n\n```yaml\n# code block\n```")}
-                  className="p-1 text-xs hover:text-crimson font-elite border border-zinc-900 rounded bg-zinc-900/50"
+                  className={`p-1 text-xs font-elite border rounded ${
+                    themeMode === "warm" 
+                      ? "bg-[#faf6ee] border-amber-955/25 text-neutral-850 hover:bg-[#eae3d5]" 
+                      : "bg-zinc-900/50 border-zinc-900 text-zinc-300 hover:text-crimson"
+                  }`}
                 >
                   Code Block
                 </button>
                 <button
                   onClick={() => setDraftMarkdown(p => p + "\n{% include footer.html %}")}
-                  className="p-1 text-[10px] text-pink-400 font-mono hover:text-crimson border border-zinc-900 rounded bg-zinc-900/50"
+                  className={`p-1 text-[10px] font-mono border rounded ${
+                    themeMode === "warm" 
+                      ? "bg-[#faf6ee] border-amber-955/25 text-pink-700 hover:bg-[#eae3d5]" 
+                      : "bg-zinc-900/50 border-zinc-900 text-pink-400 hover:text-crimson"
+                  }`}
                   title="Insert Jekyll Liquid include tag"
                 >
                   &#123;% Liquid %&#125;
+                </button>
+
+                {/* Prettify Command Bot */}
+                <button
+                  onClick={handlePrettifyMarkdown}
+                  className={`ml-auto px-2 py-1 text-[10px] font-elite flex items-center gap-1 cursor-pointer transition-all border rounded ${
+                    themeMode === "warm"
+                      ? "bg-emerald-50 border-emerald-600/30 text-emerald-800 hover:bg-emerald-100/50"
+                      : "bg-emerald-950/20 border-emerald-900/30 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40"
+                  }`}
+                  title="Clean up whitespace & align raw Liquid markers"
+                >
+                  <Sparkles className={`w-3 h-3 animate-pulse ${
+                    themeMode === "warm" ? "text-emerald-600" : "text-emerald-400"
+                  }`} />
+                  <span>Prettify Post</span>
                 </button>
               </div>
 
@@ -1244,26 +1541,38 @@ jobs:
               <div className="flex-1 p-4 relative min-h-[400px]">
                 {editorMode === "visual" ? (
                   <div className="w-full h-full flex flex-col">
-                    <span className="text-[10px] font-elite text-zinc-500 uppercase block mb-2 tracking-widest leading-none">
+                    <span className={`text-[10px] font-elite uppercase block mb-2 tracking-widest leading-none ${
+                        themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"
+                    }`}>
                       📖 Vintage typewriter paper sheets view
                     </span>
                     <textarea
                       value={draftMarkdown}
                       onChange={(e) => setDraftMarkdown(e.target.value)}
-                      className={`w-full flex-1 border-0 resize-none outline-none font-sans text-lg focus:ring-0 leading-relaxed`}
+                      className={`w-full flex-1 bg-transparent border-0 resize-none outline-none font-sans text-lg focus:ring-0 leading-relaxed ${
+                        themeMode === "warm" ? "text-neutral-900 placeholder-stone-500" : "text-[#eae7e2] placeholder-zinc-500"
+                      }`}
                       style={{ fontFamily: "'Crimson Pro', Georgia, serif" }}
                       placeholder="Typewriter keys waiting to strike cotton paper sheets..."
                     />
                   </div>
                 ) : (
-                  <div className="w-full h-full flex flex-col font-mono text-sm leading-relaxed text-zinc-300">
-                    <span className="text-[10px] font-elite text-zinc-500 uppercase block mb-2 tracking-widest leading-none">
+                  <div className={`w-full h-full flex flex-col font-mono text-sm leading-relaxed ${
+                    themeMode === "warm" ? "text-neutral-900" : "text-zinc-300"
+                  }`}>
+                    <span className={`text-[10px] font-elite uppercase block mb-2 tracking-widest leading-none ${
+                      themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"
+                    }`}>
                       ⌨ RAW MARKDOWN CODE MODE WITH SYNTAX MARKUPS
                     </span>
                     <textarea
                       value={draftMarkdown}
                       onChange={(e) => setDraftMarkdown(e.target.value)}
-                      className="w-full flex-1 bg-transparent resize-none border-0 outline-none font-mono focus:ring-0 text-amber-100/90 selection:bg-crimson/30"
+                      className={`w-full flex-1 bg-transparent resize-none border-0 outline-none font-mono focus:ring-0 ${
+                        themeMode === "warm" 
+                          ? "text-[#231a15] selection:bg-crimson/15 placeholder-neutral-500" 
+                          : "text-amber-100/90 selection:bg-crimson/30 placeholder-zinc-600"
+                      }`}
                       placeholder="## Chapter heading..."
                     />
                   </div>
@@ -1290,22 +1599,30 @@ jobs:
 
                 <div className="p-6 font-sans">
                   {/* Styled Header mimicking actual Jekyll layout files */}
-                  <div className="border-b-2 border-dashed border-zinc-700 pb-4 mb-6">
+                  <div className={`pb-4 mb-6 border-b-2 border-dashed ${
+                    themeMode === "warm" ? "border-amber-955/20" : "border-zinc-700"
+                  }`}>
                     <span className="text-xs font-elite text-crimson tracking-wider uppercase inline-block pr-1">
                       {draftFrontMatter.layout ? `layout: ${draftFrontMatter.layout}` : "no layout"}
                     </span>
                     {draftFrontMatter.categories && draftFrontMatter.categories.length > 0 && (
-                      <span className="text-[10px] text-zinc-500 font-mono">
+                      <span className={`text-[10px] font-mono ${
+                        themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"
+                      }`}>
                         in {draftFrontMatter.categories.join(", ")}
                       </span>
                     )}
 
-                    <h1 className="text-3xl font-black font-elite tracking-tight text-white mt-2 leading-tight">
+                    <h1 className={`text-3xl font-black font-elite tracking-tight mt-2 leading-tight ${
+                      themeMode === "warm" ? "text-neutral-900" : "text-white"
+                    }`}>
                       {draftTitle || "Untitled Chapter Draft"}
                     </h1>
                     
-                    <div className="flex flex-wrap gap-2 items-center text-xs text-zinc-400 mt-2 font-mono">
-                      <span>Author: <strong className="text-zinc-300">{draftFrontMatter.author || "Global Editor"}</strong></span>
+                    <div className={`flex flex-wrap gap-2 items-center text-xs mt-2 font-mono ${
+                      themeMode === "warm" ? "text-neutral-600" : "text-zinc-400"
+                    }`}>
+                      <span>Author: <strong className={themeMode === "warm" ? "text-neutral-900" : "text-zinc-300"}>{draftFrontMatter.author || "Global Editor"}</strong></span>
                       <span>•</span>
                       <span>Date: {draftFrontMatter.date || new Date().toISOString()}</span>
                     </div>
@@ -1314,7 +1631,11 @@ jobs:
                     {draftFrontMatter.tags && draftFrontMatter.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1 mt-3">
                         {draftFrontMatter.tags.map((t: string) => (
-                          <span key={t} className="text-[9px] font-mono bg-zinc-900 border border-zinc-800 text-zinc-400 px-2 py-0.5 rounded">
+                          <span key={t} className={`text-[9px] font-mono px-2 py-0.5 rounded border ${
+                            themeMode === "warm" 
+                              ? "bg-[#faf6ee] border-amber-955/20 text-neutral-800" 
+                              : "bg-zinc-900 border-zinc-800 text-zinc-400"
+                          }`}>
                             #{t}
                           </span>
                         ))}
@@ -1324,7 +1645,9 @@ jobs:
 
                   {/* HTML rendered markdown */}
                   <div
-                    className="prose prose-invert max-w-none text-left leading-relaxed text-zinc-300"
+                    className={themeMode === "warm" 
+                      ? "prose prose-stone text-neutral-900 max-w-none text-left leading-relaxed prose-headings:text-neutral-950 prose-a:text-crimson prose-strong:text-neutral-950" 
+                      : "prose prose-invert text-zinc-300 max-w-none text-left leading-relaxed prose-headings:text-white prose-a:text-crimson prose-strong:text-white"}
                     dangerouslySetInnerHTML={{
                       __html: renderMarkdown(draftMarkdown, selectedRepo.owner, selectedRepo.name, selectedRepo.selectedBranch),
                     }}
@@ -1337,9 +1660,9 @@ jobs:
 
           {/* LOWER INTERACTIVE SHEETS & SETTINGS (CONTAINED IN BOTTOM PANEL) */}
           {showBottomPanel && (
-            <>
+            <div className="border-t border-zinc-800 bg-zinc-950 shrink-0 max-h-[340px] overflow-y-auto">
               {/* LOWER INTERACTIVE SHEETS: AI PLUGINS AND SYSTEM AUDITS */}
-              <div className="border-t border-zinc-800 bg-zinc-950 p-6 space-y-6">
+              <div className="p-6 space-y-6">
                 <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
                   
                   {/* Category: Real-time Writing & Editing Assistant */}
@@ -1363,7 +1686,7 @@ jobs:
                       <h4 className="font-elite text-zinc-200">Site Quality & Accessibility Audits</h4>
                     </div>
 
-                    <div className="space-y-2.5 flex-1 max-h-[300px] overflow-y-auto pr-1">
+                    <div className="space-y-2.5 flex-1 max-h-[320px] overflow-y-auto pr-1">
                       {seoReport.length === 0 ? (
                         <div className="p-6 text-center text-xs text-zinc-500 italic">
                           ✓ No warnings found! Your post conforms perfectly to Jekyll production standards.
@@ -1421,7 +1744,7 @@ jobs:
               </div>
 
               {/* AI Settings Section */}
-              <div className="border-t border-zinc-800 bg-zinc-950/40 p-6">
+              <div className="border-t border-zinc-800/40 bg-zinc-950/40 p-6">
                 <AISettings
                   settings={aiSettings}
                   onUpdate={(fields) => setAiSettings(prev => ({ ...prev, ...fields }))}
@@ -1429,7 +1752,7 @@ jobs:
                   onUpdateOpenaiKey={setOpenaiKey}
                 />
               </div>
-            </>
+            </div>
           )}
 
         </main>
@@ -1437,20 +1760,28 @@ jobs:
         {/* RIGHT SIDEBAR PANEL: DETAILED METADATA & FRONT-MATTER FORM */}
         {showRightSidebar && (
           <aside className={`w-80 border-l p-4 flex flex-col gap-6 overflow-y-auto shrink-0 select-none ${
-            themeMode === "warm" ? "border-amber-900/10 bg-[#faf6ee]" : "border-zinc-805 bg-zinc-950"
+            themeMode === "warm" ? "border-amber-955/15 bg-[#faf6ee]" : "border-zinc-800 bg-zinc-950"
           }`}>
             
-            <div className="flex items-center justify-between border-b border-zinc-800 pb-2">
+            <div className={`flex items-center justify-between border-b pb-2 ${
+              themeMode === "warm" ? "border-amber-955/10" : "border-zinc-800"
+            }`}>
               <div className="flex items-center gap-1.5">
                 <SlidersHorizontal className="w-4 h-4 text-crimson" />
-                <span className="font-elite text-xs uppercase tracking-widest text-zinc-300 font-bold">
+                <span className={`font-elite text-xs uppercase tracking-widest font-bold ${
+                  themeMode === "warm" ? "text-neutral-800" : "text-zinc-300"
+                }`}>
                   🛠 Front Matter Core
                 </span>
               </div>
               
               <button
                 onClick={() => setShowRawYAMLEditor(p => !p)}
-                className="text-[9px] font-mono border border-zinc-800 text-zinc-400 px-1.5 py-0.5 rounded hover:text-red-300"
+                className={`text-[9px] font-mono px-1.5 py-0.5 rounded border transition-colors ${
+                  themeMode === "warm" 
+                    ? "border-amber-955/20 text-neutral-600 hover:text-crimson" 
+                    : "border-zinc-800 text-zinc-400 hover:text-red-300"
+                }`}
               >
                 {showRawYAMLEditor ? "LITERAL FIELD" : "RAW YAML"}
               </button>
@@ -1458,7 +1789,9 @@ jobs:
 
             {showRawYAMLEditor ? (
               <div className="space-y-2">
-                <span className="text-[10px] font-elite text-zinc-500 block uppercase">
+                <span className={`text-[10px] font-elite block uppercase ${
+                  themeMode === "warm" ? "text-neutral-600" : "text-zinc-500"
+                }`}>
                   Raw YAML Key Value Code
                 </span>
                 <textarea
@@ -1471,7 +1804,11 @@ jobs:
                     } catch (err) {}
                   }}
                   rows={12}
-                  className="w-full bg-zinc-950/80 border border-zinc-800 text-zinc-300 font-mono text-[11px] p-2.5 rounded focus:border-crimson outline-none"
+                  className={`w-full font-mono text-[11px] p-2.5 rounded focus:border-crimson outline-none border ${
+                    themeMode === "warm" 
+                      ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-900" 
+                      : "bg-zinc-950/80 border-zinc-800 text-zinc-300"
+                  }`}
                 />
                 <p className="text-[9px] text-zinc-500 italic">
                   * Edit fields inside raw JSON structure notation above.
@@ -1481,13 +1818,19 @@ jobs:
               <div className="space-y-4">
                 {/* layout */}
                 <div>
-                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
+                  <label className={`block text-[10px] font-elite uppercase tracking-widest mb-1 leading-none ${
+                    themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-500"
+                  }`}>
                     Page Layout
                   </label>
                   <select
                     value={draftFrontMatter.layout || "post"}
                     onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, layout: e.target.value }))}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-200 font-mono text-xs p-2 rounded focus:border-crimson outline-none cursor-pointer"
+                    className={`w-full font-mono text-xs p-2 rounded focus:border-crimson outline-none shrink-0 cursor-pointer border ${
+                      themeMode === "warm" 
+                        ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-900" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-250 text-zinc-200"
+                    }`}
                   >
                     <option value="post">post (Standard blog record)</option>
                     <option value="page">page (Static standalone site)</option>
@@ -1498,92 +1841,126 @@ jobs:
 
                 {/* slug / permalink */}
                 <div>
-                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
+                  <label className={`block text-[10px] font-elite uppercase tracking-widest mb-1 leading-none ${
+                    themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-500"
+                  }`}>
                     Dynamic URL Path Slug
                   </label>
                   <input
                     type="text"
                     value={draftFrontMatter.slug || activePost.slug}
                     onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, slug: e.target.value }))}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
+                    className={`w-full font-mono text-xs p-2 rounded focus:border-crimson outline-none border ${
+                      themeMode === "warm" 
+                        ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-900 placeholder-stone-500" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300 placeholder-zinc-650"
+                    }`}
                     placeholder="slug-value-record"
                   />
                 </div>
 
                 {/* author */}
                 <div>
-                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
+                  <label className={`block text-[10px] font-elite uppercase tracking-widest mb-1 leading-none ${
+                    themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-500"
+                  }`}>
                     Author Signature
                   </label>
                   <input
                     type="text"
                     value={draftFrontMatter.author || ""}
                     onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, author: e.target.value }))}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
+                    className={`w-full font-mono text-xs p-2 rounded focus:border-crimson outline-none border ${
+                      themeMode === "warm" 
+                        ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-900 placeholder-stone-500" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300 placeholder-zinc-650"
+                    }`}
                     placeholder="Oliver Sterling"
                   />
                 </div>
 
                 {/* categories */}
                 <div>
-                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none flex justify-between">
-                    <span>Categories Array</span>
+                  <label className="block text-[10px] font-elite uppercase tracking-widest mb-1 leading-none flex justify-between">
+                    <span className={themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-500"}>Categories Array</span>
                     <span className="font-mono text-[9px] text-zinc-500">Comma split</span>
                   </label>
                   <input
                     type="text"
                     value={draftFrontMatter.categories ? draftFrontMatter.categories.join(", ") : ""}
                     onChange={(e) => handleUpdateArrayField("categories", e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
+                    className={`w-full font-mono text-xs p-2 rounded focus:border-crimson outline-none border ${
+                      themeMode === "warm" 
+                        ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-900 placeholder-stone-500" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300 placeholder-zinc-c50"
+                    }`}
                     placeholder="chronicles, web, review"
                   />
                 </div>
 
                 {/* tags */}
                 <div>
-                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none flex justify-between">
-                    <span>Tags Array</span>
+                  <label className="block text-[10px] font-elite uppercase tracking-widest mb-1 leading-none flex justify-between">
+                    <span className={themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-500"}>Tags Array</span>
                     <span className="font-mono text-[9px] text-zinc-500">Comma split</span>
                   </label>
                   <input
                     type="text"
                     value={draftFrontMatter.tags ? draftFrontMatter.tags.join(", ") : ""}
                     onChange={(e) => handleUpdateArrayField("tags", e.target.value)}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
+                    className={`w-full font-mono text-xs p-2 rounded focus:border-crimson outline-none border ${
+                      themeMode === "warm" 
+                        ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-900 placeholder-stone-500" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300 placeholder-[#444]"
+                    }`}
                     placeholder="ink, typewriter, vintage"
                   />
                 </div>
 
                 {/* description / excerpt */}
                 <div>
-                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
+                  <label className={`block text-[10px] font-elite uppercase tracking-widest mb-1 leading-none ${
+                    themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-500"
+                  }`}>
                     Seo Meta Description
                   </label>
                   <textarea
                     value={draftFrontMatter.description || ""}
                     onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, description: e.target.value }))}
                     rows={3}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none leading-relaxed"
+                    className={`w-full font-mono text-xs p-2 rounded focus:border-crimson outline-none leading-relaxed border ${
+                      themeMode === "warm" 
+                        ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-900 placeholder-stone-500" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300 placeholder-zinc-600"
+                    }`}
                     placeholder="Short, elegant SEO meta summary under 160 chars..."
                   />
                 </div>
 
                 {/* featured image path */}
                 <div>
-                  <label className="block text-[10px] font-elite text-zinc-500 uppercase tracking-widest mb-1 leading-none">
+                  <label className={`block text-[10px] font-elite uppercase tracking-widest mb-1 leading-none ${
+                    themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-500"
+                  }`}>
                     Featured Image URL / Rel-path
                   </label>
                   <input
                     type="text"
                     value={draftFrontMatter.image || ""}
                     onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, image: e.target.value }))}
-                    className="w-full bg-zinc-900 border border-zinc-800 text-zinc-300 font-mono text-xs p-2 rounded focus:border-crimson outline-none"
+                    className={`w-full font-mono text-xs p-2 rounded focus:border-crimson outline-none border ${
+                      themeMode === "warm" 
+                        ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-900 placeholder-stone-500" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300 placeholder-zinc-600"
+                    }`}
                     placeholder="assets/images/typewriter.jpg"
                   />
                 </div>
 
                 {/* Dynamic Added Metadata keys */}
-                <div className="pt-2 border-t border-zinc-900">
+                <div className={`pt-2 border-t ${
+                  themeMode === "warm" ? "border-amber-955/10" : "border-zinc-900"
+                }`}>
                   <div className="flex items-center justify-between mb-2">
                     <span className="text-[10px] font-elite text-crimson uppercase">Custom Keys</span>
                     <button
@@ -1598,13 +1975,18 @@ jobs:
                     {Object.entries(draftFrontMatter)
                       .filter(([k]) => !["layout", "title", "date", "author", "categories", "tags", "description", "image", "slug"].includes(k))
                       .map(([key, val]) => (
-                        <div key={key} className="p-2 bg-zinc-900/40 border border-zinc-900 rounded-md flex items-center justify-between">
-                          <div className="font-mono text-[10px] text-zinc-400">
-                            <span className="font-bold text-zinc-300">{key}:</span> {String(val)}
+                        <div key={key} className={`p-2 rounded-md flex items-center justify-between border ${
+                          themeMode === "warm" ? "bg-[#fbf9f4] border-amber-955/20 text-neutral-800" : "bg-zinc-900/40 border-zinc-900 text-zinc-300"
+                        }`}>
+                          <div className="font-mono text-[10px]">
+                            <span className={`font-bold mr-1 ${
+                              themeMode === "warm" ? "text-amber-955" : "text-zinc-300"
+                            }`}>{key}:</span> 
+                            <span className={themeMode === "warm" ? "text-neutral-700" : "text-zinc-400"}>{String(val)}</span>
                           </div>
                           <button
                             onClick={() => handleRemoveCustomKey(key)}
-                            className="text-zinc-600 hover:text-crimson font-mono text-[9px]"
+                            className="text-zinc-650 hover:text-crimson font-mono text-[9px] cursor-pointer"
                           >
                             ✕
                           </button>
@@ -1616,29 +1998,41 @@ jobs:
             )}
 
             {/* Site theme configurations */}
-            <div className="mt-auto border-t border-zinc-900 pt-4 space-y-4">
-              <span className="font-elite text-[10px] uppercase tracking-widest text-zinc-500 block leading-none">
+            <div className={`mt-auto border-t pt-4 space-y-4 ${
+              themeMode === "warm" ? "border-amber-955/15" : "border-zinc-900"
+            }`}>
+              <span className={`font-elite text-[10px] uppercase tracking-widest block leading-none ${
+                themeMode === "warm" ? "text-neutral-600 font-bold" : "text-zinc-500"
+              }`}>
                 ■ Active Jekyll Theme Settings
               </span>
               
               <div className="space-y-2 text-xs font-sans">
                 <div className="flex justify-between">
-                  <span className="text-zinc-500">Theme Gem:</span>
-                  <span className="font-mono text-crimson">minima</span>
+                  <span className={themeMode === "warm" ? "text-neutral-600" : "text-zinc-500"}>Theme Gem:</span>
+                  <span className="font-mono text-crimson font-bold">minima</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-zinc-500">Build Target:</span>
-                  <span className="font-mono text-zinc-400">GitHub Pages</span>
+                  <span className={themeMode === "warm" ? "text-neutral-600" : "text-zinc-500"}>Build Target:</span>
+                  <span className={`font-mono ${
+                    themeMode === "warm" ? "text-neutral-800 font-semibold" : "text-zinc-400"
+                  }`}>GitHub Pages</span>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[8px] font-mono text-zinc-500 uppercase mb-0.5">Title Font</label>
+                  <label className={`block text-[8px] font-mono uppercase mb-0.5 ${
+                    themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"
+                  }`}>Title Font</label>
                   <select
                     value={themeConfig.headingFont}
                     onChange={(e) => setThemeConfig(prev => ({ ...prev, headingFont: e.target.value }))}
-                    className="w-full bg-zinc-900 text-[10px] font-mono p-1 border border-zinc-800 text-zinc-300 rounded outline-none"
+                    className={`w-full text-[10px] font-mono p-1 rounded outline-none border cursor-pointer ${
+                      themeMode === "warm" 
+                        ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-800" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300"
+                    }`}
                   >
                     <option value="Special Elite">Special Elite</option>
                     <option value="Courier Prime">Courier Prime</option>
@@ -1647,11 +2041,17 @@ jobs:
                 </div>
 
                 <div>
-                  <label className="block text-[8px] font-mono text-zinc-500 uppercase mb-0.5">Body Font</label>
+                  <label className={`block text-[8px] font-mono uppercase mb-0.5 ${
+                    themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"
+                  }`}>Body Font</label>
                   <select
                     value={themeConfig.bodyFont}
                     onChange={(e) => setThemeConfig(prev => ({ ...prev, bodyFont: e.target.value }))}
-                    className="w-full bg-zinc-900 text-[10px] font-mono p-1 border border-zinc-800 text-zinc-300 rounded outline-none"
+                    className={`w-full text-[10px] font-mono p-1 rounded outline-none border cursor-pointer ${
+                      themeMode === "warm" 
+                        ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-800" 
+                        : "bg-zinc-900 border-zinc-800 text-zinc-300"
+                    }`}
                   >
                     <option value="Crimson Pro">Crimson Pro</option>
                     <option value="Lora">Lora</option>
@@ -1668,32 +2068,40 @@ jobs:
 
       {/* 3. FOOTER LIVE STATUS BOARD */}
       <footer className={`border-t flex flex-wrap gap-4 items-center justify-between px-4 py-2 shrink-0 text-[11px] font-sans ${
-        themeMode === "warm" ? "border-amber-900/10 bg-[#f7f2ea] text-amber-950" : "border-zinc-900 bg-zinc-950 text-zinc-400"
+        themeMode === "warm" ? "border-amber-955/15 bg-[#f7f2ea] text-neutral-800" : "border-zinc-900 bg-zinc-950 text-zinc-400"
       }`}>
         
         <div className="flex items-center gap-4">
           <div className="flex items-center gap-1">
-            <Check className="w-4 h-4 text-emerald-500 shrink-0" />
+            <Check className="w-4 h-4 text-emerald-550 text-emerald-500 shrink-0" />
             <span className="font-mono">{statusText}</span>
           </div>
-          <span>|</span>
+          <span className={themeMode === "warm" ? "text-amber-955/25" : "text-zinc-800"}>|</span>
           <div>
-            <span>Target Root: <strong className="font-mono text-zinc-300">/{selectedRepo.rootPath}</strong></span>
+            <span>Target Root: <strong className={`font-mono ${
+              themeMode === "warm" ? "text-neutral-900" : "text-zinc-300"
+            }`}>/{selectedRepo.rootPath}</strong></span>
           </div>
-          <span>|</span>
+          <span className={themeMode === "warm" ? "text-amber-955/25" : "text-zinc-800"}>|</span>
           <div>
-            <span>Active Branch: <strong className="font-mono text-zinc-300">{selectedRepo.selectedBranch}</strong></span>
+            <span>Active Branch: <strong className={`font-mono ${
+              themeMode === "warm" ? "text-neutral-900" : "text-zinc-300"
+            }`}>{selectedRepo.selectedBranch}</strong></span>
           </div>
         </div>
 
         <div className="flex items-center gap-4 font-mono">
-          <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800/80 px-2.5 py-0.5 rounded-full text-[10px] text-zinc-400">
-            <Wifi className="w-3 h-3 text-emerald-400 animate-pulse" />
+          <div className={`flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] border ${
+            themeMode === "warm" 
+              ? "bg-[#eae2d5] border-amber-955/15 text-neutral-800" 
+              : "bg-zinc-900 border-zinc-800/80 text-zinc-400"
+          }`}>
+            <Wifi className="w-3 h-3 text-emerald-500 animate-pulse" />
             <span>Simulated Git Proxy Active</span>
           </div>
           
-          <div className="text-zinc-500">
-            Render Node Time: <span className="text-zinc-300">2026-05-20 UTC</span>
+          <div className={themeMode === "warm" ? "text-neutral-600" : "text-zinc-500"}>
+            Render Node Time: <span className={themeMode === "warm" ? "text-neutral-900" : "text-zinc-300"}>2026-05-20 UTC</span>
           </div>
         </div>
 
@@ -1766,6 +2174,241 @@ jobs:
             </div>
             <div className="p-3 bg-zinc-950 border border-zinc-800 text-[10px] text-zinc-500 leading-normal">
               * Tokens remain entirely stored in your browser session context. Jekyll Forge never passes tokens to any third-party databases.
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 1.5: GitHub Branches & Commits History Sync */}
+      {showGitModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className={`border rounded-lg max-w-2xl w-full max-h-[85vh] flex flex-col overflow-hidden shadow-2xl ${
+            themeMode === "warm" ? "bg-[#faf6ee] border-amber-955/20 text-neutral-800" : "bg-zinc-950 border-zinc-800 text-zinc-100"
+          }`}>
+            {/* Modal Header */}
+            <div className={`p-4 border-b flex items-center justify-between ${
+              themeMode === "warm" ? "border-amber-955/15 bg-[#f5efe4]" : "border-zinc-850 bg-zinc-900/40"
+            }`}>
+              <div className="flex items-center gap-2">
+                <GitBranch className="w-5 h-5 text-crimson animate-pulse" />
+                <span className="font-elite text-sm text-crimson font-bold uppercase tracking-widest">
+                  GitHub Workspace Branch & History
+                </span>
+              </div>
+              <button
+                onClick={() => setShowGitModal(false)}
+                className={`text-sm p-1 rounded cursor-pointer transition-colors ${
+                  themeMode === "warm" ? "text-neutral-500 hover:text-neutral-800 hover:bg-amber-955/10" : "text-zinc-500 hover:text-zinc-300 hover:bg-zinc-900"
+                }`}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 flex-1 overflow-y-auto space-y-4">
+              <div>
+                <span className={`text-[10px] font-elite uppercase tracking-wider block leading-none mb-1 ${
+                  themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"
+                }`}>
+                  Repository Reference Scope
+                </span>
+                <span className={`font-mono font-semibold text-xs py-1 px-2.5 rounded border ${
+                  themeMode === "warm" ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-800" : "bg-zinc-900 border-zinc-850 text-zinc-300"
+                }`}>
+                  {selectedRepo.owner}/{selectedRepo.name}
+                </span>
+              </div>
+
+              {/* Offline/Simulated Alert Banner */}
+              {isSimulatedData && (
+                <div className={`p-3.5 border rounded text-xs space-y-2.5 shadow-inner ${
+                  themeMode === "warm" 
+                    ? "bg-amber-955/5 border-amber-955/15 text-[#6c5431]" 
+                    : "bg-amber-955/10 border-amber-900/20 text-amber-200/95"
+                }`}>
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <p className="leading-normal border-0 outline-none">
+                      <strong>Offline Mock Mode Active:</strong> We projected a high-fidelity local snapshot of the repository's metadata because no live remote token is currently mapped, or request rate limits were reached.
+                    </p>
+                  </div>
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() => {
+                        setShowGitModal(false);
+                        setShowGithubSetup(true);
+                      }}
+                      className={`text-[10px] uppercase font-elite border px-2 py-0.5 rounded cursor-pointer text-right transition-colors ${
+                        themeMode === "warm" 
+                          ? "text-amber-850 border-amber-955/35 hover:bg-amber-955/15" 
+                          : "text-amber-400 border-amber-900/30 hover:bg-amber-950/40"
+                      }`}
+                    >
+                      Configure GitHub Credentials
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* State rendering */}
+              {isGitLoading ? (
+                <div className="flex flex-col items-center justify-center py-16 space-y-3">
+                  <RefreshCw className="w-6 h-6 text-crimson animate-spin" />
+                  <span className={`text-xs font-elite ${
+                    themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"
+                  }`}>
+                    Querying live branches tree & commit activity payload...
+                  </span>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-1">
+                  {/* Left Column: Branches list */}
+                  <div className="lg:col-span-5 space-y-2">
+                    <label className={`block text-[10px] font-elite uppercase tracking-widest ${
+                      themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"
+                    }`}>
+                      Remote Branches ({gitBranches.length})
+                    </label>
+                    <p className={`text-[10px] leading-normal ${
+                      themeMode === "warm" ? "text-neutral-600" : "text-zinc-400"
+                    }`}>
+                      Choose an active target branch to switch editing focus:
+                    </p>
+                    <div className="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                      {gitBranches.map((branch) => {
+                        const isActive = branch.name === selectedRepo.selectedBranch;
+                        return (
+                          <button
+                            key={branch.name}
+                            onClick={() => handleSwitchRepositoryBranch(branch.name)}
+                            className={`w-full p-2 rounded text-xs text-left cursor-pointer transition-all flex items-center justify-between border ${
+                              isActive
+                                ? "bg-crimson/10 border-crimson/30 text-crimson font-bold shadow-inner"
+                                : themeMode === "warm"
+                                  ? "bg-[#fbf9f4] hover:bg-[#eae3d5] border-amber-955/20 text-neutral-800"
+                                  : "bg-zinc-900/60 hover:bg-zinc-900 border-zinc-850 hover:border-zinc-800 text-zinc-300"
+                            }`}
+                          >
+                            <span className="flex items-center gap-1.5 truncate">
+                              <GitBranch className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-crimson' : 'text-zinc-500'}`} />
+                              <span className="truncate">{branch.name}</span>
+                            </span>
+                            {branch.protected && (
+                              <span className={`text-[8px] font-elite uppercase px-1 rounded border ${
+                                themeMode === "warm" 
+                                  ? "bg-[#f5efe4] border-amber-955/30 text-neutral-500" 
+                                  : "bg-zinc-800 border-zinc-700/30 text-zinc-500"
+                              }`}>
+                                Protected
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Right Column: Commit logs */}
+                  <div className="lg:col-span-7 space-y-2">
+                    <label className={`block text-[10px] font-elite uppercase tracking-widest ${
+                      themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"
+                    }`}>
+                      Recent Commit Logs ({selectedRepo.selectedBranch})
+                    </label>
+                    <div className={`space-y-2 max-h-[260px] overflow-y-auto pr-1 border p-2.5 rounded ${
+                      themeMode === "warm" 
+                        ? "bg-[#fbf9f4] border-amber-955/20 text-neutral-800" 
+                        : "bg-zinc-950 border-zinc-900 text-zinc-300"
+                    }`}>
+                      {gitCommits.length === 0 ? (
+                        <p className={`text-xs text-center py-6 leading-normal ${
+                          themeMode === "warm" ? "text-neutral-500" : "text-zinc-500"
+                        }`}>
+                          No commits found for selected branch target.
+                        </p>
+                      ) : (
+                        gitCommits.map((c) => {
+                          const dateString = c.commit?.author?.date
+                            ? new Date(c.commit.author.date).toLocaleString([], {
+                                month: "short",
+                                day: "numeric",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                              })
+                            : "N/A";
+                          const shortSha = c.sha?.slice(0, 7) || "unknown";
+                          const commitUrl = c.html_url || `https://github.com/${selectedRepo.owner}/${selectedRepo.name}/commit/${c.sha}`;
+
+                          return (
+                            <div
+                              key={c.sha}
+                              className={`p-2 rounded border transition-colors space-y-1 text-xs ${
+                                themeMode === "warm" 
+                                  ? "hover:bg-amber-955/5 border-transparent hover:border-amber-955/15" 
+                                  : "hover:bg-zinc-900/60 border-transparent hover:border-zinc-850/50"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="font-mono text-[10px] text-crimson font-bold bg-crimson/5 border border-crimson/10 px-1 py-0.5 rounded leading-none">
+                                  {shortSha}
+                                </span>
+                                <span className="text-[10px] text-zinc-500 font-mono tracking-wide leading-none">
+                                  {dateString}
+                                </span>
+                              </div>
+                              <p className={`font-medium leading-snug ${
+                                themeMode === "warm" ? "text-neutral-900" : "text-zinc-300"
+                              }`}>
+                                {c.commit?.message}
+                              </p>
+                              <div className="flex items-center justify-between text-[10px] text-zinc-500 pt-0.5">
+                                <span>
+                                  By: <strong className={themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-400"}>{c.commit?.author?.name}</strong>
+                                </span>
+                                <a
+                                  href={commitUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-crimson hover:text-crimson-hover flex items-center gap-0.5 inline-flex"
+                                  title="Inspect commit raw payload on GitHub"
+                                >
+                                  <span>Inspect</span>
+                                  <ExternalLink className="w-2.5 h-2.5 shrink-0" />
+                                </a>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className={`p-4 border-t flex items-center justify-between ${
+              themeMode === "warm" ? "border-amber-955/15 bg-[#f5efe4]" : "border-zinc-850 bg-zinc-900/20"
+            }`}>
+              <button
+                onClick={fetchGitData}
+                disabled={isGitLoading}
+                className={`px-3 py-1.5 rounded border transition-colors text-xs flex items-center gap-1.5 cursor-pointer disabled:opacity-50 font-elite ${
+                  themeMode === "warm"
+                    ? "bg-[#faf6ee] border-amber-955/25 text-neutral-700 hover:bg-[#eae3d5]"
+                    : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:text-white"
+                }`}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 text-zinc-400 ${isGitLoading ? 'animate-spin' : ''}`} />
+                <span>Refresh Logs</span>
+              </button>
+              <button
+                onClick={() => setShowGitModal(false)}
+                className="px-4 py-1.5 text-xs font-elite font-bold bg-crimson hover:bg-crimson-hover text-white rounded transition-colors cursor-pointer"
+              >
+                Close View
+              </button>
             </div>
           </div>
         </div>
