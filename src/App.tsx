@@ -630,6 +630,171 @@ end
     setStatusText(`Successfully created blank document at: ${newPath}`);
   };
 
+  // Save the current post/file state as a Draft inside the '_drafts/' directory using the GitHub API
+  const handleSaveToDrafts = async () => {
+    setStatusText("Preparing draft payload for repository commit...");
+
+    // Validate draft title
+    if (!draftTitle.trim()) {
+      alert("Validation failed: Draft files must have a valid non-empty 'title' field to save.");
+      setStatusText("Draft save canceled.");
+      return;
+    }
+
+    // Build filename and path for the drafts repository
+    const slug = draftFrontMatter.slug || activePost.slug || draftTitle.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "untitled-draft";
+    const filename = slug.endsWith(".md") ? slug : `${slug}.md`;
+    const draftsPath = `_drafts/${filename}`;
+
+    // Prepend rootPath if configured and not "/"
+    const finalGitPath = selectedRepo.rootPath && selectedRepo.rootPath !== "/" 
+      ? `${selectedRepo.rootPath}/${draftsPath}` 
+      : draftsPath;
+
+    // Format the markdown content with Front Matter
+    const fullyFormattedText = formatJekyllPost(draftFrontMatter, draftMarkdown);
+
+    // Check for real GitHub authorization token
+    const isRealToken = githubToken && githubToken !== "simulated-dev-token";
+
+    if (!isRealToken) {
+      // Offline simulation fallback flow
+      setStatusText("Saving draft to local workspace state (offline fallback active)...");
+      setTimeout(() => {
+        const resolvedPost: JekyllPost = {
+          ...activePost,
+          path: draftsPath,
+          filename: filename,
+          slug: slug,
+          markdown: draftMarkdown,
+          frontMatter: { ...draftFrontMatter, title: draftTitle, slug: slug },
+          status: "draft",
+        };
+
+        setPosts(prev => {
+          const exists = prev.some(p => p.path === draftsPath);
+          if (exists) {
+            return prev.map(p => p.path === draftsPath ? resolvedPost : p);
+          } else {
+            return [resolvedPost, ...prev];
+          }
+        });
+        setActivePost(resolvedPost);
+        
+        // Add snapshot for security and history timeline
+        const newSnap: Snapshot = {
+          id: `snap-draft-${Date.now()}`,
+          label: `Saved Draft: ${draftTitle}`,
+          createdAt: new Date().toISOString(),
+          postPath: draftsPath,
+          markdown: draftMarkdown,
+          frontMatter: draftFrontMatter,
+          reason: "manual",
+        };
+        setSnapshots(prev => [newSnap, ...prev]);
+
+        setStatusText(`Offline draft saved to local workspace: ${draftsPath}`);
+        alert(`Saved Draft Successfully (Offline WorkspaceFallback Mode)!\n\nDestination: ${draftsPath}\nLayout Title: ${draftTitle}\n\nPlease configure your GitHub Token credentials to persist draft branch changes directly.`);
+      }, 1000);
+      return;
+    }
+
+    // Live GitHub Commit flow!
+    setStatusText("Fetching remote draft reference metadata from GitHub API...");
+    try {
+      const headers: Record<string, string> = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": `Bearer ${githubToken}`,
+      };
+
+      // 1. Get existing file metadata if any to recover base64 sha (prevents collision conflicts)
+      const getFileUrl = `https://api.github.com/repos/${selectedRepo.owner}/${selectedRepo.name}/contents/${finalGitPath}?ref=${encodeURIComponent(selectedRepo.selectedBranch)}`;
+      let existingSha: string | undefined = undefined;
+
+      const getRes = await fetch(getFileUrl, { headers });
+      if (getRes.ok) {
+        const fileMetadata = await getRes.json();
+        existingSha = fileMetadata.sha;
+      } else if (getRes.status !== 404) {
+        throw new Error(`Unexpected status code check from GitHub repository content endpoint: ${getRes.status}`);
+      }
+
+      // 2. Base64 encode the final file payload
+      // UTF-8 base64 encoding strategy avoids breaking Unicode characters
+      const base64Content = btoa(unescape(encodeURIComponent(fullyFormattedText)));
+
+      setStatusText("Uploading and committing base64 file blob to draft directory...");
+      const putFileUrl = `https://api.github.com/repos/${selectedRepo.owner}/${selectedRepo.name}/contents/${finalGitPath}`;
+      
+      const payload: Record<string, any> = {
+        message: `Create/Update editorial draft file under _drafts: ${draftTitle}`,
+        content: base64Content,
+        branch: selectedRepo.selectedBranch,
+      };
+      if (existingSha) {
+        payload.sha = existingSha;
+      }
+
+      const putRes = await fetch(putFileUrl, {
+        method: "PUT",
+        headers: {
+          ...headers,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!putRes.ok) {
+        const errorData = await putRes.json().catch(() => ({}));
+        throw new Error(errorData.message || `GitHub commit error Status ${putRes.status}`);
+      }
+
+      const updatedFileMetadata = await putRes.json();
+      const commitSha = updatedFileMetadata.commit?.sha || "Unknown";
+
+      // 3. Update the local UI model state
+      const resolvedPost: JekyllPost = {
+        ...activePost,
+        path: draftsPath,
+        filename: filename,
+        slug: slug,
+        markdown: draftMarkdown,
+        frontMatter: { ...draftFrontMatter, title: draftTitle, slug: slug },
+        status: "draft",
+        sha: updatedFileMetadata.content?.sha,
+      };
+
+      setPosts(prev => {
+        const exists = prev.some(p => p.path === draftsPath);
+        if (exists) {
+          return prev.map(p => p.path === draftsPath ? resolvedPost : p);
+        } else {
+          return [resolvedPost, ...prev];
+        }
+      });
+      setActivePost(resolvedPost);
+
+      // Save snapshots
+      const newSnap: Snapshot = {
+        id: `snap-draft-${Date.now()}`,
+        label: `Saved Draft: ${draftTitle}`,
+        createdAt: new Date().toISOString(),
+        postPath: draftsPath,
+        markdown: draftMarkdown,
+        frontMatter: draftFrontMatter,
+        reason: "manual",
+      };
+      setSnapshots(prev => [newSnap, ...prev]);
+
+      setStatusText(`Draft saved successfully to GitHub! Commit SHA: ${commitSha.slice(0, 8)}`);
+      alert(`Draft Persisted on GitHub!\n\nDestination Path: ${draftsPath}\nCommit Reference: ${commitSha.slice(0, 8)}\nRepository: ${selectedRepo.owner}/${selectedRepo.name}\nBranch: ${selectedRepo.selectedBranch}`);
+    } catch (err: any) {
+      console.error("Save to Drafts GitHub Error Exception:", err);
+      setStatusText(`Save Draft failed: ${err.message}`);
+      alert(`GitHub Draft Preservation Failed:\n\n${err.message}`);
+    }
+  };
+
   // Generate dynamic GitHub Commit payloads and publish
   const handlePublishFile = async () => {
     setStatusText("Committing changes directly to raw GitHub API Tree...");
@@ -963,6 +1128,21 @@ jobs:
             title="Download full Jekyll export payload"
           >
             <FileDown className="w-4 h-4" />
+          </button>
+
+          {/* Save to Drafts Trigger */}
+          <button
+            onClick={handleSaveToDrafts}
+            className={`font-elite text-xs py-1.5 px-2.5 sm:px-3 rounded-md flex items-center gap-1.5 cursor-pointer border transition-colors shrink-0 ${
+              themeMode === "warm" 
+                ? "bg-[#faf6ee] border-amber-955/20 text-neutral-700 hover:bg-[#eae3d5]" 
+                : "bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800 focus:border-crimson"
+            }`}
+            title="Save as draft under _drafts/ directory in your active branch"
+          >
+            <FileText className="w-4 h-4 text-crimson" />
+            <span className="hidden md:inline">Save as Draft</span>
+            <span className="inline md:hidden">Draft</span>
           </button>
 
           {/* Commit & Publish Trigger */}
@@ -2574,6 +2754,7 @@ jobs:
             <div className="p-2 space-y-1">
               {[
                 { label: "Create a visual post", desc: "Instantiate a new post model with seed content.", action: () => handleCreateNewPost(false) },
+                { label: "Save workspace draft copy", desc: "Commit current chapter draft structures into _drafts directory via GitHub REST API.", action: () => handleSaveToDrafts() },
                 { label: "Publish workspace to pages", desc: "Commit current chapter draft structures into live repository branching.", action: () => handlePublishFile() },
                 { label: "Optimize asset", desc: "Convert current layout attachment references to highly compressed WEBP format.", action: () => setActiveFileTab("assets") },
                 { label: "Generate actions build workflow", desc: "Compile CI build configurations for multi-plugin compatibility.", action: () => setShowWorkflowGenerator(true) },
