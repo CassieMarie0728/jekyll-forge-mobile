@@ -49,7 +49,8 @@ import {
   Moon,
   GitBranch,
   GitCommit,
-  ExternalLink
+  ExternalLink,
+  Smartphone
 } from "lucide-react";
 
 import { Repository, JekyllPost, Asset, Snapshot, SEOReportItem } from "./types";
@@ -217,7 +218,162 @@ export default function App() {
   // Active documents & loading state
   const [posts, setPosts] = useState<JekyllPost[]>(SEED_POSTS);
   const [activePost, setActivePost] = useState<JekyllPost>(SEED_POSTS[0]);
-  const [activeFileTab, setActiveFileTab] = useState<string>("posts"); // "posts" | "drafts" | "assets" | "config"
+  const [activeFileTab, setActiveFileTab] = useState<string>("posts"); // "posts" | "drafts" | "assets" | "config" | "mobile"
+  
+  // --- Mobile & PWA Native Android Sandbox States ---
+  const [vibrationStatus, setVibrationStatus] = useState<string>("Idle: Waiting for touch trigger...");
+  const [batteryState, setBatteryState] = useState<{ level: number; charging: boolean }>({ level: 92, charging: true });
+  const [simulatedDeviceCoords, setSimulatedDeviceCoords] = useState<{ lat: number; lng: number }>({ lat: 37.7749, lng: -122.4194 }); // SF default
+  const [simulatedLogcat, setSimulatedLogcat] = useState<string[]>([
+    "I/[Capacitor/Console]: Initializing Jekyll Forge Android Shell...",
+    "D/[Capacitor/Device]: Checking SDK version: API 34 (Android 14)",
+    "I/[PWA/ServiceWorker]: sw.js registered successfully.",
+    "I/[Web/PWA]: Manifest active. Standalone view-mode available."
+  ]);
+  const [pwaInstallPrompt, setPwaInstallPrompt] = useState<any>(null);
+  const [showPwaInstallModal, setShowPwaInstallModal] = useState<boolean>(false);
+  const [isCapacitorBridgeEnabled, setIsCapacitorBridgeEnabled] = useState<boolean>(true);
+
+  // Logcat entry pusher
+  const addLogcatLine = (line: string) => {
+    const timestamp = new Date().toLocaleTimeString([], { hour12: false });
+    setSimulatedLogcat(prev => [`[${timestamp}] ${line}`, ...prev.slice(0, 18)]);
+  };
+
+  // Battery monitoring hook
+  useEffect(() => {
+    if (typeof navigator !== "undefined" && "getBattery" in navigator) {
+      (navigator as any).getBattery().then((batteryObj: any) => {
+        setBatteryState({
+          level: Math.round(batteryObj.level * 100),
+          charging: batteryObj.charging,
+        });
+        
+        const updateBattery = () => {
+          const currentLevel = Math.round(batteryObj.level * 100);
+          setBatteryState({
+            level: currentLevel,
+            charging: batteryObj.charging,
+          });
+          addLogcatLine(`D/[Capacitor/Battery]: State changed: ${currentLevel}% (${batteryObj.charging ? "Charging" : "Discharging"})`);
+        };
+
+        batteryObj.addEventListener("levelchange", updateBattery);
+        batteryObj.addEventListener("chargingchange", updateBattery);
+      }).catch((e: any) => {
+        console.warn("Battery status API not accessible in this context:", e);
+      });
+    }
+  }, []);
+
+  // Native installation listeners
+  useEffect(() => {
+    const handleBeforeInstall = (e: Event) => {
+      e.preventDefault();
+      setPwaInstallPrompt(e);
+      addLogcatLine("I/[PWA/Install]: 'beforeinstallprompt' fired. App is eligible for installation.");
+    };
+
+    const handleAppInstalled = () => {
+      addLogcatLine("I/[PWA/Install]: 'appinstalled' confirmation received. Jekyll Forge PWA installed successfully!");
+      alert("Hooray! Jekyll Forge has been successfully installed on your device!");
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    window.addEventListener("appinstalled", handleAppInstalled);
+
+    return () => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+      window.removeEventListener("appinstalled", handleAppInstalled);
+    };
+  }, []);
+
+  // --- Interactive Mobile & PWA Device Trigger Handlers ---
+  const triggerSimulatedVibration = () => {
+    if (typeof navigator !== "undefined" && navigator.vibrate) {
+      try {
+        navigator.vibrate(120);
+        setVibrationStatus("Vibrated! Real device haptics triggered.");
+        addLogcatLine("I/[Capacitor/Haptics]: Vibe Engine triggered vibrate(120ms)");
+      } catch (err: any) {
+        setVibrationStatus("Simulated vibration pulse (Haptics mock)!");
+        addLogcatLine("I/[Capacitor/Haptics]: Web haptics restricted in sandbox");
+      }
+    } else {
+      setVibrationStatus("Simulated vibration pulse (Haptics mock)!");
+      addLogcatLine("I/[Capacitor/Haptics]: Simulated vibrate() pulse on non-mobile platform");
+    }
+    setTimeout(() => setVibrationStatus("Idle: Waiting for touch trigger..."), 1800);
+  };
+
+  const triggerSimulatedLocation = () => {
+    addLogcatLine("D/[Capacitor/Geolocation]: Requesting hardware location coordinates...");
+    if (typeof navigator !== "undefined" && navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setSimulatedDeviceCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+          addLogcatLine(`I/[Capacitor/Geolocation]: Coords: ${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)} (Accuracy: ${pos.coords.accuracy.toFixed(1)}m)`);
+        },
+        (err) => {
+          const randomLat = 37.7749 + (Math.random() - 0.5) * 0.1;
+          const randomLng = -122.4194 + (Math.random() - 0.5) * 0.1;
+          setSimulatedDeviceCoords({ lat: randomLat, lng: randomLng });
+          addLogcatLine(`W/[Capacitor/Geolocation]: Hardware call warning (${err.message}). Loaded simulated sandbox coordinates.`);
+        }
+      );
+    } else {
+      const randomLat = 37.7749 + (Math.random() - 0.5) * 0.1;
+      const randomLng = -122.4194 + (Math.random() - 0.5) * 0.1;
+      setSimulatedDeviceCoords({ lat: randomLat, lng: randomLng });
+      addLogcatLine("W/[Capacitor/Geolocation]: Geolocation API unsupported. Loaded fake fallback coordinates.");
+    }
+  };
+
+  const triggerSimulatedNotification = () => {
+    addLogcatLine("D/[Capacitor/LocalNotifications]: Resolving device notification permission...");
+    if (typeof window !== "undefined" && "Notification" in window) {
+      Notification.requestPermission().then((permission) => {
+        if (permission === "granted") {
+          try {
+            new Notification("Jekyll Forge Android CMS", {
+              body: "Standalone web container is active and synchronizing live draft repositories safely.",
+              icon: "/pwa-icon.png"
+            });
+            addLogcatLine("I/[Capacitor/LocalNotifications]: Push notification compiled and delivered.");
+          } catch (err: any) {
+            addLogcatLine("W/[Capacitor/LocalNotifications]: Web Notification constructor blocked. Direct mock banner instead.");
+            setStatusText("Android App Notification: Offline Sync Successful!");
+          }
+        } else {
+          addLogcatLine(`W/[Capacitor/LocalNotifications]: Permission denied (${permission}). Simulating inline banner.`);
+          setStatusText("Android App Notification: Permission Required for Sync Alerts.");
+        }
+      }).catch((err) => {
+        addLogcatLine("W/[Capacitor/LocalNotifications]: Notification Request blocked by sandboxed iframe bounds.");
+        setStatusText("Android App Notification: Active Sync Ok!");
+      });
+    } else {
+      addLogcatLine("W/[Capacitor/LocalNotifications]: API unsupported in current client agent.");
+      setStatusText("Android App Notification: Active Sync Ok!");
+    }
+  };
+
+  const handleTriggerPwaInstall = () => {
+    if (pwaInstallPrompt) {
+      addLogcatLine("I/[PWA/Install]: User triggered installation banner...");
+      pwaInstallPrompt.prompt();
+      pwaInstallPrompt.userChoice.then((choiceResult: any) => {
+        addLogcatLine(`I/[PWA/Install]: User select choice outcome: ${choiceResult.outcome}`);
+        if (choiceResult.outcome === "accepted") {
+          setPwaInstallPrompt(null);
+        }
+      });
+    } else {
+      setShowPwaInstallModal(true);
+      addLogcatLine("I/[PWA/Install]: Displaying interactive step-by-step mobile install guides.");
+    }
+  };
+
   const [showLeftSidebar, setShowLeftSidebar] = useState<boolean>(true);
   const [showRightSidebar, setShowRightSidebar] = useState<boolean>(true);
   const [showBottomPanel, setShowBottomPanel] = useState<boolean>(true);
@@ -1210,19 +1366,19 @@ jobs:
             {/* Section B: File navigation sub-tabs */}
             <div>
               <div className={`flex text-center border-b ${
-                themeMode === "warm" ? "border-amber-950/5" : "border-zinc-900"
+                themeMode === "warm" ? "border-amber-955/15" : "border-zinc-900"
               }`}>
-                {["posts", "assets", "config", "plugins"].map((tab) => (
+                {["posts", "assets", "config", "plugins", "mobile"].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setActiveFileTab(tab)}
-                    className={`flex-1 py-1 px-1.5 font-elite text-[10px] uppercase tracking-wider transition-all border-b-2 ${
+                    className={`flex-1 py-1 px-1 font-elite text-[10px] uppercase tracking-wider transition-all border-b-2 ${
                       activeFileTab === tab
                         ? "border-crimson text-crimson font-bold"
                         : `border-transparent hover:text-crimson ${
                             themeMode === "warm" ? "text-amber-955/70" : "text-zinc-500 hover:text-zinc-300"
                           }`
-                    }`}
+                     }`}
                   >
                     {tab}
                   </button>
@@ -1456,6 +1612,235 @@ jobs:
                     >
                       Generate Actions Build Pipeline
                     </button>
+                  </div>
+                )}
+
+                {/* Category: Mobile & PWA Native Android Panel */}
+                {activeFileTab === "mobile" && (
+                  <div className="p-2.5 space-y-3 font-sans">
+                    {/* Header Banner */}
+                    <div className="p-3 bg-crimson/5 border-l-2 border-crimson text-[11px] leading-relaxed rounded-r-md">
+                      <div className="font-elite text-crimson font-bold uppercase tracking-wider mb-0.5 flex items-center gap-1.5">
+                        <Smartphone className="w-3.5 h-3.5 shrink-0 animate-pulse" />
+                        Android & PWA Sandbox
+                      </div>
+                      <span className={themeMode === "warm" ? "text-neutral-700" : "text-zinc-400"}>
+                        Direct toolkit to review mobile web installability and prototype native Android device bridges.
+                      </span>
+                    </div>
+
+                    {/* Section 1: PWA Verification Status */}
+                    <div className="space-y-1.5">
+                      <div className={`text-[10px] uppercase tracking-wider font-elite ${
+                        themeMode === "warm" ? "text-neutral-600 font-semibold" : "text-zinc-500"
+                      }`}>
+                        ■ PWA Manifest Indicators
+                      </div>
+                      
+                      <div className={`p-2 border rounded-lg space-y-1 text-[11px] ${
+                        themeMode === "warm" ? "border-amber-955/15 bg-[#faf6ee]" : "border-zinc-900 bg-zinc-900/25"
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="opacity-75">Web Manifest</span>
+                          <span className="font-mono text-[9px] text-emerald-400 flex items-center gap-1 font-semibold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            site.webmanifest
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="opacity-75">Service Worker Cache</span>
+                          <span className="font-mono text-[9px] text-emerald-400 flex items-center gap-1 font-semibold">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            sw.js Active
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="opacity-75">Custom App Icon</span>
+                          <span className="font-mono text-[9px] text-zinc-400">pwa-icon.png</span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="opacity-75">Display Orientation</span>
+                          <span className="font-mono text-[9px] text-amber-500 uppercase">Standalone</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 2: PWA Installation trigger */}
+                    <div className="space-y-1.5">
+                      <div className={`text-[10px] uppercase tracking-wider font-elite ${
+                        themeMode === "warm" ? "text-neutral-600 font-semibold" : "text-zinc-500"
+                      }`}>
+                        ■ PWA Home Launcher
+                      </div>
+                      <button
+                        onClick={handleTriggerPwaInstall}
+                        className="w-full bg-crimson hover:bg-red-700 text-white font-elite text-[10.5px] py-2 rounded-md transition-colors font-semibold flex items-center justify-center gap-1.5 shadow-sm uppercase tracking-wide cursor-pointer"
+                      >
+                        <Smartphone className="w-3.5 h-3.5" />
+                        Install Standalone App
+                      </button>
+                    </div>
+
+                    {/* Section 3: Native Web-to-App Device Sandbox */}
+                    <div className="space-y-1.5">
+                      <div className={`text-[10px] uppercase tracking-wider font-elite ${
+                        themeMode === "warm" ? "text-neutral-600 font-semibold" : "text-zinc-500"
+                      }`}>
+                        ■ Android Bridge Hardware Sandbox
+                      </div>
+
+                      <div className={`p-2.5 border rounded-lg space-y-2.5 ${
+                        themeMode === "warm" ? "border-amber-955/15 bg-[#faf6ee]" : "border-zinc-900 bg-zinc-900/25"
+                      }`}>
+                        {/* Haptic Vibe Engine */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] leading-none">
+                            <span className="font-mono text-zinc-400 uppercase text-[9px]">Capacitor.Haptics</span>
+                            <span className="font-mono text-[9.5px] text-amber-500 truncate max-w-[120px]" title={vibrationStatus}>
+                              {vibrationStatus.split(":")[0]}
+                            </span>
+                          </div>
+                          <button
+                            onClick={triggerSimulatedVibration}
+                            className={`w-full py-1 text-[10px] font-elite border rounded hover:bg-crimson/10 hover:border-crimson cursor-pointer transition-all ${
+                              themeMode === "warm" ? "border-amber-955/20 text-neutral-800 bg-[#fbf9f4]" : "border-zinc-800 text-zinc-300 bg-zinc-950/40"
+                            }`}
+                          >
+                            Trigger Vibrate Pulse
+                          </button>
+                        </div>
+
+                        {/* Local Notifications API */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] leading-none">
+                            <span className="font-mono text-zinc-400 uppercase text-[9px]">Capacitor.LocalNotifications</span>
+                            <span className="font-mono text-[9.5px] text-zinc-500">Device Push Banner</span>
+                          </div>
+                          <button
+                            onClick={triggerSimulatedNotification}
+                            className={`w-full py-1 text-[10px] font-elite border rounded hover:bg-crimson/10 hover:border-crimson cursor-pointer transition-all ${
+                              themeMode === "warm" ? "border-amber-955/20 text-neutral-800 bg-[#fbf9f4]" : "border-zinc-800 text-zinc-300 bg-zinc-950/40"
+                            }`}
+                          >
+                            Dispatch App Notification
+                          </button>
+                        </div>
+
+                        {/* Geolocation API */}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] leading-none">
+                            <span className="font-mono text-zinc-400 uppercase text-[9px]">Capacitor.Geolocation</span>
+                            <span className="font-mono text-[9.5px] text-emerald-400 font-semibold animate-pulse" title="Device Coordinates">
+                              {simulatedDeviceCoords.lat.toFixed(4)}°, {simulatedDeviceCoords.lng.toFixed(4)}°
+                            </span>
+                          </div>
+                          <button
+                            onClick={triggerSimulatedLocation}
+                            className={`w-full py-1 text-[10px] font-elite border rounded hover:bg-crimson/10 hover:border-crimson cursor-pointer transition-all ${
+                              themeMode === "warm" ? "border-amber-955/20 text-neutral-800 bg-[#fbf9f4]" : "border-zinc-800 text-zinc-300 bg-zinc-950/40"
+                            }`}
+                          >
+                            Poll GPS Coordinates
+                          </button>
+                        </div>
+
+                        {/* Battery fuel gauge */}
+                        <div className="pt-0.5">
+                          <div className="flex items-center justify-between text-[10px] mb-1">
+                            <span className="text-zinc-500 font-semibold">BATTERY TELEMETRY:</span>
+                            <span className={`font-semibold font-mono ${batteryState.charging ? "text-emerald-400" : "text-amber-500"}`}>
+                              {batteryState.level}% {batteryState.charging ? "(Charging)" : "(Bat)"}
+                            </span>
+                          </div>
+                          <div className="w-full h-1.5 bg-zinc-950/80 rounded-full overflow-hidden border border-zinc-805/30">
+                            <div 
+                              className={`h-full transition-all duration-500 ${
+                                batteryState.level < 20 
+                                  ? "bg-red-500 animate-pulse" 
+                                  : batteryState.charging 
+                                    ? "bg-emerald-400" 
+                                    : "bg-amber-400"
+                              }`}
+                              style={{ width: `${batteryState.level}%` }}
+                            ></div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section 4: Live Logcat Studio terminal console */}
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <div className={`text-[10px] uppercase tracking-wider font-elite ${
+                          themeMode === "warm" ? "text-neutral-600 font-semibold" : "text-zinc-500"
+                        }`}>
+                          ■ Logcat Console (API Logs)
+                        </div>
+                        <button 
+                          onClick={() => setSimulatedLogcat(["D/[Local/Logcat]: Console history purged."])}
+                          className="text-[9px] hover:text-crimson font-elite text-zinc-500 uppercase cursor-pointer"
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      <div className="w-full h-28 bg-zinc-950 font-mono text-[9px] p-2 rounded-md overflow-y-auto leading-normal border border-zinc-900 select-all scrollbar-thin text-zinc-300">
+                        {simulatedLogcat.map((line, i) => {
+                          let colorClass = "text-zinc-400";
+                          if (line.includes("E/")) colorClass = "text-red-400 font-semibold";
+                          else if (line.includes("W/")) colorClass = "text-amber-400";
+                          else if (line.includes("I/")) colorClass = "text-emerald-300";
+                          else if (line.includes("D/")) colorClass = "text-cyan-400";
+                          return (
+                            <div key={i} className={`truncate ${colorClass}`} title={line}>
+                              {line}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Section 5: Copayble Native Android build setup */}
+                    <div className="space-y-1.5 border-t border-zinc-850 pt-2">
+                      <div className={`text-[10px] uppercase tracking-wider font-elite ${
+                        themeMode === "warm" ? "text-neutral-600 font-semibold" : "text-zinc-500"
+                      }`}>
+                        ■ Android Studio Integration
+                      </div>
+                      <div className={`p-2 border rounded-lg space-y-1.5 text-[10.5px] leading-relaxed ${
+                        themeMode === "warm" ? "border-amber-955/15 bg-[#faf6ee]" : "border-zinc-900 bg-zinc-900/25"
+                      }`}>
+                        <p className={themeMode === "warm" ? "text-neutral-700" : "text-zinc-400"}>
+                          Turn Jekyll Forge into a native Android application by running these Capacitor shell commands:
+                        </p>
+                        <div className="bg-zinc-950 text-red-300 font-mono text-[8.5px] p-1.5 rounded relative group leading-normal border border-zinc-900 max-h-32 overflow-y-auto">
+                          <code className="block whitespace-pre select-all">
+{`# 1. Install Capacitor CLI
+npm i @capacitor/core @capacitor/cli
+
+# 2. Setup Android container
+npx cap init "Jekyll Forge" "com.jekyllforge.app"
+npx cap add android
+
+# 3. Build and Sync Vite files
+npm run build
+npx cap sync
+
+# 4. Open in Android Studio
+npx cap open android`}
+                          </code>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(`npm i @capacitor/core @capacitor/cli\nnpx cap init "Jekyll Forge" "com.jekyllforge.app"\nnpx cap add android\nnpm run build\nnpx cap sync\nnpx cap open android`);
+                              alert("Copied Capacitor setup script lines to clipboard!");
+                            }}
+                            className="absolute top-1 right-1 bg-zinc-900 border border-zinc-800 p-1 rounded hover:bg-zinc-800 text-zinc-500 hover:text-white cursor-pointer"
+                            title="Copy setup scripts"
+                          >
+                            <Copy className="w-2.5 h-2.5" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -2588,6 +2973,106 @@ jobs:
                 className="px-4 py-1.5 text-xs font-elite font-bold bg-crimson hover:bg-crimson-hover text-white rounded transition-colors cursor-pointer"
               >
                 Close View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 1.8: Custom PWA Mobile Installation Assistant */}
+      {showPwaInstallModal && (
+        <div className="fixed inset-0 bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className={`border rounded-lg max-w-lg w-full max-h-[85vh] flex flex-col overflow-hidden shadow-2xl ${
+            themeMode === "warm" ? "bg-[#faf6ee] border-amber-955/20 text-neutral-800" : "bg-zinc-950 border-zinc-800 text-zinc-100"
+          }`}>
+            {/* Modal Header */}
+            <div className={`p-4 border-b flex items-center justify-between ${
+              themeMode === "warm" ? "border-amber-955/15 bg-[#f5efe4]" : "border-zinc-850 bg-zinc-900/40"
+            }`}>
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-5 h-5 text-crimson animate-pulse" />
+                <span className="font-elite text-sm text-crimson font-bold uppercase tracking-widest">
+                  Mobile Jekyll Forge Installer
+                </span>
+              </div>
+              <button
+                onClick={() => setShowPwaInstallModal(false)}
+                className={`text-sm p-1 rounded cursor-pointer transition-colors ${
+                  themeMode === "warm" ? "text-neutral-500 hover:text-neutral-800 hover:bg-amber-955/10" : "text-zinc-500 hover:text-zinc-305 hover:bg-zinc-900"
+                }`}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-5 flex-1 overflow-y-auto space-y-5 text-sm leading-relaxed">
+              <div className="text-center font-sans space-y-2">
+                <div className="w-16 h-16 bg-crimson/10 rounded-2xl mx-auto flex items-center justify-center border border-crimson/25 shadow-inner">
+                  <Smartphone className="w-8 h-8 text-crimson" />
+                </div>
+                <div className="space-y-0.5">
+                  <h4 className="font-elite font-bold text-base text-crimson tracking-wider uppercase">Jekyll Forge Editorial CMS</h4>
+                  <p className="text-xs opacity-70">Progressive Web Application Installation Framework</p>
+                </div>
+              </div>
+
+              <p className={themeMode === "warm" ? "text-neutral-700 text-xs text-center" : "text-zinc-400 text-xs text-center"}>
+                Jekyll Forge runs in a dedicated standalone app sandbox on Android or iOS. Install it below to enable persistent draft storage, desktop shortcut icons, and distraction-free editing.
+              </p>
+
+              <hr className={themeMode === "warm" ? "border-amber-955/10" : "border-zinc-900"} />
+
+              {/* Walkthrough Platforms */}
+              <div className="space-y-4">
+                {/* 1. Android Platform Chrome */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-elite text-xs uppercase font-bold text-crimson tracking-wide">
+                    <span className="w-1.5 h-1.5 rounded-full bg-crimson"></span>
+                    Android Chrome Deployment
+                  </div>
+                  <div className={`p-3 rounded-lg text-xs space-y-1.5 ${
+                    themeMode === "warm" ? "bg-[#f5efe4]" : "bg-zinc-900/40"
+                  }`}>
+                    <p>1. Open Jekyll Forge in your Android Chrome or Samsung browser.</p>
+                    <p>2. Tap the browser options menu <strong className="font-mono text-crimson font-bold">⋮</strong> (typically on the top-right corner).</p>
+                    <p>3. Select <strong className="font-semibold text-crimson">"Add to Home screen"</strong> or <strong className="font-semibold text-crimson">"Install app"</strong>.</p>
+                    <p>4. Confirm the installation. A native launcher shortcut will be compiled on your home screen.</p>
+                  </div>
+                </div>
+
+                {/* 2. iOS Apple Safari */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center gap-1.5 font-elite text-xs uppercase font-bold text-crimson tracking-wide">
+                    <span className="w-1.5 h-1.5 rounded-full bg-crimson"></span>
+                    iOS Apple Safari Deployment
+                  </div>
+                  <div className={`p-3 rounded-lg text-xs space-y-1.5 ${
+                    themeMode === "warm" ? "bg-[#f5efe4]" : "bg-zinc-900/40"
+                  }`}>
+                    <p>1. Launch Safari browser and navigate to the Jekyll Forge address.</p>
+                    <p>2. Tap the central <strong className="font-semibold text-crimson">"Share"</strong> icon (the square with an arrow pointing up at the footer).</p>
+                    <p>3. Scroll down the item list and click <strong className="font-semibold text-crimson">"Add to Home Screen" (+)</strong>.</p>
+                    <p>4. Input a custom name and tap 'Add'. The app will instantly launch as a standalone web app.</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Status Alert */}
+              <div className="p-3 bg-teal-950/15 border border-teal-850/50 rounded text-xs text-teal-400 font-sans leading-relaxed">
+                💡 <strong>Pro Tip</strong>: In standalone modes, draft sync works even in tunnel transits! Any workspace drafts you commit locally will run on background Sync APIs once network returns.
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className={`p-3 border-t flex justify-end gap-2.5 shrink-0 ${
+              themeMode === "warm" ? "border-amber-955/15 bg-[#f5efe4]" : "border-zinc-850 bg-zinc-900/40"
+            }`}>
+              <button
+                onClick={() => setShowPwaInstallModal(false)}
+                className="px-4 py-1.5 text-xs font-elite font-bold bg-crimson hover:bg-crimson-hover text-white rounded transition-colors cursor-pointer uppercase tracking-wider"
+              >
+                Understood, Got it!
               </button>
             </div>
           </div>

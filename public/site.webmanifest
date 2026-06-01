@@ -1,0 +1,19 @@
+{
+  "name": "Jekyll Forge",
+  "short_name": "JekyllForge",
+  "description": "A production-ready visual editor and publishing dashboard for GitHub-hosted Jekyll blogs.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#09090b",
+  "theme_color": "#9e1a1a",
+  "orientation": "any",
+  "categories": ["productivity", "developer"],
+  "icons": [
+    {
+      "src": "/pwa-icon.png",
+      "sizes": "192x192 256x256 384x384 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
