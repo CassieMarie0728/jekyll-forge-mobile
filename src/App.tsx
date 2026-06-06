@@ -58,6 +58,14 @@ import { parseJekyllPost, formatJekyllPost } from "./utils/yaml";
 import { renderMarkdown, countWords, estimateReadingTime, extractHeaderOutline } from "./utils/markdown";
 import AIAssistant from "./components/AIAssistant";
 import AISettings from "./components/AISettings";
+import MergeHub from "./components/MergeHub";
+import {
+  playTypewriterKeySound,
+  playTypewriterSpacebar,
+  playTypewriterBell,
+  playTypewriterBackspace,
+  procAmbientEngine
+} from "./utils/audioSynth";
 
 // Initializing beautiful mock repositories to make the workspace alive instantly
 const INITIAL_REPOSITORIES: Repository[] = [
@@ -379,7 +387,13 @@ export default function App() {
   const [showBottomPanel, setShowBottomPanel] = useState<boolean>(true);
 
   // Editor states
-  const [editorMode, setEditorMode] = useState<"visual" | "raw" | "split">("split");
+  const [editorMode, setEditorMode] = useState<"visual" | "raw" | "split" | "merge">("split");
+  const [isZenMode, setIsZenMode] = useState<boolean>(false);
+  const [zenTheme, setZenTheme] = useState<"amber" | "green" | "parchment" | "obsidian">("amber");
+  const [keystrokeVolume, setKeystrokeVolume] = useState<number>(0.4);
+  const [rainVolume, setRainVolume] = useState<number>(0);
+  const [fireplaceVolume, setFireplaceVolume] = useState<number>(0);
+  const [mobileHapticsEnabled, setMobileHapticsEnabled] = useState<boolean>(true);
   const [draftTitle, setDraftTitle] = useState<string>(SEED_POSTS[0].frontMatter.title || "");
   const [draftMarkdown, setDraftMarkdown] = useState<string>(SEED_POSTS[0].markdown);
   const [draftFrontMatter, setDraftFrontMatter] = useState<Record<string, any>>(SEED_POSTS[0].frontMatter);
@@ -472,6 +486,49 @@ group :jekyll_plugins do
   gem "jekyll-sitemap", "~> 1.4"
 end
 `);
+
+  // Synchronize ambient noise synth loops
+  useEffect(() => {
+    if (rainVolume > 0) {
+      procAmbientEngine.startRain(rainVolume * 0.15); // Scale down slightly to sound ambient
+    } else {
+      procAmbientEngine.stopRain();
+    }
+  }, [rainVolume]);
+
+  useEffect(() => {
+    if (fireplaceVolume > 0) {
+      procAmbientEngine.startFireplace(fireplaceVolume * 0.15);
+    } else {
+      procAmbientEngine.stopFireplace();
+    }
+  }, [fireplaceVolume]);
+
+  useEffect(() => {
+    return () => {
+      procAmbientEngine.cleanupAll();
+    };
+  }, []);
+
+  const handleTypewriterKeyPress = (e: React.KeyboardEvent<any>) => {
+    if (keystrokeVolume > 0) {
+      if (e.key === "Enter") {
+        playTypewriterBell(keystrokeVolume + 0.1);
+      } else if (e.key === " ") {
+        playTypewriterSpacebar(keystrokeVolume);
+      } else if (e.key === "Backspace") {
+        playTypewriterBackspace(keystrokeVolume);
+      } else if (e.key.length === 1) {
+        playTypewriterKeySound(keystrokeVolume);
+      }
+    }
+
+    if (mobileHapticsEnabled && typeof navigator !== "undefined" && navigator.vibrate) {
+      try {
+        navigator.vibrate(10);
+      } catch (err) {}
+    }
+  };
 
   // Prettify Markdown & Liquid tags
   const handlePrettifyMarkdown = () => {
@@ -1917,19 +1974,38 @@ npx cap open android`}
             {/* Visual formatting and toggle buttons */}
             <div className="flex items-center gap-1.5 shrink-0 justify-start lg:justify-end flex-wrap">
               {/* Active editing mode selector */}
-              {["visual", "raw", "split"].map((m) => (
+              {["visual", "raw", "split", "merge"].map((m) => (
                 <button
                   key={m}
                   onClick={() => setEditorMode(m as any)}
                   className={`px-2.5 py-1 rounded text-xs font-elite capitalize transition-all cursor-pointer shrink-0 ${
                     editorMode === m
                       ? "bg-crimson text-white font-bold"
+                      : m === "merge" && snapshots.length === 0
+                      ? "text-zinc-600 cursor-not-allowed opacity-50"
                       : "text-zinc-500 hover:text-zinc-300"
                   }`}
+                  disabled={m === "merge" && snapshots.length === 0}
+                  title={m === "merge" && snapshots.length === 0 ? "Unlock Merge Hub by saving or editing file snapshots" : ""}
                 >
-                  {m}
+                  {m === "merge" ? "Merge Hub ⇄" : m}
                 </button>
               ))}
+
+              <div className={`h-4 w-[1px] mx-1 ${themeMode === "warm" ? "bg-amber-900/20" : "bg-zinc-800"} shrink-0`} division-line="true"></div>
+
+              {/* Zen focus button */}
+              <button
+                onClick={() => {
+                  setIsZenMode(true);
+                  setKeystrokeVolume(0.4);
+                }}
+                className="px-2.5 py-1 rounded text-xs font-elite transition-all cursor-pointer shrink-0 bg-crimson/15 border border-crimson/30 hover:bg-crimson/30 text-red-100 flex items-center gap-1"
+                title="Enter tactile typewriter distraction-free Focus Mode"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-crimson animate-pulse" />
+                <span>Zen Scribe (Tactile Focus)</span>
+              </button>
 
               <div className={`h-4 w-[1px] mx-1 ${themeMode === "warm" ? "bg-amber-900/20" : "bg-zinc-800"} shrink-0`} division-line="true"></div>
 
@@ -1987,9 +2063,31 @@ npx cap open android`}
           </div>
 
           {/* Core Applet Workspace Split Grid */}
-          <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0 overflow-y-auto">
-            
-            {/* Split column left: Text Content Area */}
+          <div className="flex-1 min-h-0 overflow-y-auto flex flex-col">
+            {editorMode === "merge" ? (
+              <div className="flex-1 p-5 overflow-y-auto">
+                <MergeHub
+                  currentPostMarkdown={draftMarkdown}
+                  snapshots={snapshots}
+                  onApplyMerge={(mergedText) => {
+                    setDraftMarkdown(mergedText);
+                    const newSnap: Snapshot = {
+                      id: `snap-merge-${Date.now()}`,
+                      label: `Reconciled Merge: ${draftTitle}`,
+                      createdAt: new Date().toISOString(),
+                      postPath: activePost.path,
+                      markdown: mergedText,
+                      frontMatter: draftFrontMatter,
+                      reason: "manual",
+                    };
+                    setSnapshots(prev => [newSnap, ...prev]);
+                  }}
+                  themeMode={themeMode}
+                />
+              </div>
+            ) : (
+              <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0">
+                {/* Split column left: Text Content Area */}
             <div className={`h-full flex flex-col overflow-y-auto ${
               editorMode === "raw" ? "lg:col-span-12" : editorMode === "visual" ? "lg:col-span-12" : "lg:col-span-6"
             }`}>
@@ -2114,6 +2212,7 @@ npx cap open android`}
                     <textarea
                       value={draftMarkdown}
                       onChange={(e) => setDraftMarkdown(e.target.value)}
+                      onKeyDown={handleTypewriterKeyPress}
                       className={`w-full flex-1 bg-transparent border-0 resize-none outline-none font-sans text-lg focus:ring-0 leading-relaxed ${
                         themeMode === "warm" ? "text-neutral-900 placeholder-stone-500" : "text-[#eae7e2] placeholder-zinc-500"
                       }`}
@@ -2133,6 +2232,7 @@ npx cap open android`}
                     <textarea
                       value={draftMarkdown}
                       onChange={(e) => setDraftMarkdown(e.target.value)}
+                      onKeyDown={handleTypewriterKeyPress}
                       className={`w-full flex-1 bg-transparent resize-none border-0 outline-none font-mono focus:ring-0 ${
                         themeMode === "warm" 
                           ? "text-[#231a15] selection:bg-crimson/15 placeholder-neutral-500" 
@@ -2221,6 +2321,8 @@ npx cap open android`}
               </div>
             )}
 
+              </div>
+            )}
           </div>
 
           {/* LOWER INTERACTIVE SHEETS & SETTINGS (CONTAINED IN BOTTOM PANEL) */}
@@ -3260,12 +3362,168 @@ npx cap open android`}
                   >
                     <div>
                       <p className="font-elite text-xs text-zinc-200">{cmd.label}</p>
-                      <p className="text-[10px] text-zinc-550 italic mt-0.5">{cmd.desc}</p>
+                      <p className="text-[10px] text-zinc-555 italic mt-0.5">{cmd.desc}</p>
                     </div>
                     <ArrowRight className="w-3.5 h-3.5 text-crimson" />
                   </button>
                 ))
               }
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ZEN FOCUS MODE INTERACTIVE OVERLAY */}
+      {isZenMode && (
+        <div className={`fixed inset-0 z-50 flex flex-col font-sans select-none overflow-hidden transition-colors duration-300 ${
+          zenTheme === "amber"
+            ? "bg-black text-amber-500"
+            : zenTheme === "green"
+            ? "bg-black text-green-500"
+            : zenTheme === "parchment"
+            ? "bg-[#faf6ee] text-amber-955"
+            : "bg-zinc-950 text-zinc-100"
+        }`}>
+          {/* Scanlines layer for CRT amber/green themes */}
+          {(zenTheme === "amber" || zenTheme === "green") && (
+            <div className="absolute inset-0 pointer-events-none opacity-[0.035] bg-[linear-gradient(rgba(18,16,16,0)_50%,_rgba(0,0,0,0.25)_50%),_linear-gradient(90deg,_rgba(255,0,0,0.06),_rgba(0,255,0,0.02),_rgba(0,0,255,0.06))] bg-[size:100%_4px,_6px_100%] z-20"></div>
+          )}
+
+          {/* Floating Zen Controls Bar */}
+          <div className={`px-6 py-4 flex items-center justify-between border-b flex-wrap gap-3 ${
+            zenTheme === "parchment" ? "bg-[#f4efe4] border-amber-955/20 text-[#2c2421]" : "bg-zinc-900/60 border-zinc-800 text-zinc-200"
+          }`}>
+            <div className="flex items-center gap-3">
+              <span className="grungy-stamp border-crimson text-crimson text-xs font-bold font-elite bg-crimson/5 tracking-widest px-2.5 py-0.5 rounded">
+                ZEN TYPEWRITER
+              </span>
+              <span className="font-sans text-xs opacity-60 hidden md:inline">
+                Distraction-Free Vintage Scribe Draft Room
+              </span>
+            </div>
+
+            {/* Adjusters Panel */}
+            <div className="flex items-center gap-4 text-xs font-mono flex-wrap">
+              {/* Keystrokes Volume */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] uppercase opacity-70">Clicks:</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={keystrokeVolume}
+                  onChange={(e) => setKeystrokeVolume(parseFloat(e.target.value))}
+                  className="w-16 accent-crimson h-1 bg-zinc-700 rounded-lg cursor-pointer"
+                />
+              </div>
+              {/* Rain Soundscapes */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] uppercase opacity-70">Rain:</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={rainVolume}
+                  onChange={(e) => setRainVolume(parseFloat(e.target.value))}
+                  className="w-16 accent-crimson h-1 bg-zinc-700 rounded-lg cursor-pointer"
+                />
+              </div>
+              {/* Fireplace Hum */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] uppercase opacity-70">Fire:</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.1"
+                  value={fireplaceVolume}
+                  onChange={(e) => setFireplaceVolume(parseFloat(e.target.value))}
+                  className="w-16 accent-crimson h-1 bg-zinc-700 rounded-lg cursor-pointer"
+                />
+              </div>
+              {/* Theme select slider */}
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] uppercase opacity-70">Style:</span>
+                <select
+                  value={zenTheme}
+                  onChange={(e) => setZenTheme(e.target.value as any)}
+                  className={`text-[10px] p-1 border font-elite rounded outline-none ${
+                    zenTheme === "parchment" ? "bg-[#faf6ee] border-amber-955/20 text-neutral-800" : "bg-black border-zinc-800 text-zinc-300"
+                  }`}
+                >
+                  <option value="amber">Phosphor Amber</option>
+                  <option value="green">Term Green</option>
+                  <option value="parchment">Parchment 紙</option>
+                  <option value="obsidian">Slate Slate</option>
+                </select>
+              </div>
+
+              {/* Exit Button */}
+              <button
+                onClick={() => {
+                  setIsZenMode(false);
+                  setRainVolume(0);
+                  setFireplaceVolume(0);
+                }}
+                className="bg-crimson hover:bg-[#a61515] text-white font-elite text-[10px] uppercase px-3.5 py-1.5 rounded transition-all flex items-center gap-1 cursor-pointer"
+              >
+                ✕ Close Zen
+              </button>
+            </div>
+          </div>
+
+          {/* Big Centered Typewriter Paper Page sheets */}
+          <div className="flex-1 flex justify-center py-8 px-4 overflow-y-auto min-h-0 relative">
+            <div className={`w-full max-w-3xl flex flex-col p-8 sm:p-12 shadow-2xl rounded-lg h-full min-h-[500px] border relative transition-all ${
+              zenTheme === "amber"
+                ? "bg-black border-amber-500/20 text-amber-500/95"
+                : zenTheme === "green"
+                ? "bg-black border-green-500/20 text-green-500/95"
+                : zenTheme === "parchment"
+                ? "bg-[#fbf9f4] border-amber-955/15 text-neutral-900 shadow-amber-950/5 shadow-2xl"
+                : "bg-zinc-900 border-zinc-800 text-zinc-100"
+            }`}>
+              {/* Post title banner */}
+              <div className="border-b border-dashed pb-3 mb-4 opacity-75">
+                <span className="text-[10px] font-mono uppercase mr-2 tracking-widest font-bold">
+                  Chapter Draft •
+                </span>
+                <span className="text-xs font-elite italic font-semibold">{draftTitle || "Untitled Draft"}</span>
+              </div>
+
+              {/* Typewriter text editor */}
+              <textarea
+                value={draftMarkdown}
+                onChange={(e) => setDraftMarkdown(e.target.value)}
+                onKeyDown={handleTypewriterKeyPress}
+                className={`w-full flex-1 bg-transparent resize-none border-0 outline-none font-sans text-xl focus:ring-0 leading-relaxed placeholder:opacity-30 ${
+                  zenTheme === "amber"
+                    ? "font-mono text-amber-500 select-amber"
+                    : zenTheme === "green"
+                    ? "font-mono text-green-500 select-green"
+                    : "font-serif text-[#1e130c]"
+                }`}
+                style={{
+                  fontFamily: (zenTheme === "amber" || zenTheme === "green") ? "'JetBrains Mono', Courier, monospace" : "'Crimson Pro', Georgia, serif"
+                }}
+                placeholder="Unleash your classic stories. The infinite typing sheet is waiting... Clicks strike, enters bell, background winds blow."
+                autoFocus
+              />
+
+              {/* Tactile Bottom Status */}
+              <div className="mt-4 pt-3 border-t border-dashed opacity-50 flex items-center justify-between text-[11px] font-mono">
+                <div className="flex items-center gap-1.5">
+                  <span>{countWords(draftMarkdown)} words spoken</span>
+                  <span>•</span>
+                  <span>{estimateReadingTime(draftMarkdown)} min read duration</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="animate-pulse text-crimson">●</span>
+                  <span className="uppercase text-[9px] tracking-wide font-elite">Live Ink Scribing active</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
