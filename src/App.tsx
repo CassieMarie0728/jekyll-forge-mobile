@@ -50,7 +50,12 @@ import {
   GitBranch,
   GitCommit,
   ExternalLink,
-  Smartphone
+  Smartphone,
+  Printer,
+  Calendar,
+  ChevronDown,
+  ChevronUp,
+  ListTodo
 } from "lucide-react";
 
 import { Repository, JekyllPost, Asset, Snapshot, SEOReportItem } from "./types";
@@ -399,6 +404,7 @@ export default function App() {
   const [draftFrontMatter, setDraftFrontMatter] = useState<Record<string, any>>(SEED_POSTS[0].frontMatter);
   const [rawYAMLText, setRawYAMLText] = useState<string>("");
   const [showRawYAMLEditor, setShowRawYAMLEditor] = useState<boolean>(false);
+  const [showSyntaxGuide, setShowSyntaxGuide] = useState<boolean>(false);
 
   // Snapshot log system (IndexedDB/LocalStorage replacement simulation)
   const [snapshots, setSnapshots] = useState<Snapshot[]>([
@@ -593,6 +599,73 @@ end
 
     setDraftMarkdown(text);
     setStatusText(`Successfully pretty-formatted Markdown & Liquid alignment!`);
+  };
+
+  // Generate Table of Contents (H2 & H3) and inject into document safely
+  const handleGenerateTOC = () => {
+    if (!draftMarkdown) {
+      setStatusText("There is no markdown content to scan for a Table of Contents.");
+      return;
+    }
+    const lines = draftMarkdown.split("\n");
+    const tocItems: string[] = [];
+    
+    // Detect headers (H2, H3)
+    lines.forEach((line) => {
+      const match = line.match(/^(#{2,3})\s+(.*)$/);
+      if (match) {
+        const level = match[1].length; // 2 or 3
+        const title = match[2].trim();
+        // Skip calling "Table of Contents" to prevent duplicate listing
+        if (title.toLowerCase() === "table of contents") return;
+        
+        const slug = title
+          .toLowerCase()
+          .replace(/[^\w\s-]/g, "")
+          .replace(/[\s_]+/g, "-")
+          .replace(/^-+|-+$/g, "");
+          
+        const indent = level === 3 ? "  " : "";
+        tocItems.push(`${indent}* [${title}](#${slug})`);
+      }
+    });
+    
+    if (tocItems.length === 0) {
+      setStatusText("No H2 or H3 headers were detected in this post to structure a Table of Contents.");
+      return;
+    }
+    
+    const tocBlock = [
+      "## Table of Contents",
+      "",
+      ...tocItems,
+      "",
+      "---"
+    ].join("\n");
+    
+    // Identify insertion point right after Jekyll front-matter yaml block (delimited by second ---)
+    let insertIndex = 0;
+    if (draftMarkdown.startsWith("---")) {
+      const secondDelimiter = draftMarkdown.indexOf("---", 3);
+      if (secondDelimiter !== -1) {
+        insertIndex = secondDelimiter + 3;
+      }
+    }
+    
+    const before = draftMarkdown.slice(0, insertIndex);
+    const after = draftMarkdown.slice(insertIndex);
+    
+    // Stitch everything back together cleanly
+    const updated = [
+      before.trim(),
+      "",
+      tocBlock,
+      "",
+      after.trim()
+    ].join("\n").trim() + "\n";
+    
+    setDraftMarkdown(updated);
+    setStatusText("Injected Table of Contents anchors successfully!");
   };
 
   // Fetch branch list and commit history from real GitHub API (or back up gracefully with warning)
@@ -2009,6 +2082,44 @@ npx cap open android`}
 
               <div className={`h-4 w-[1px] mx-1 ${themeMode === "warm" ? "bg-amber-900/20" : "bg-zinc-800"} shrink-0`} division-line="true"></div>
 
+              {/* Copy Markdown button */}
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(draftMarkdown).then(() => {
+                    setStatusText("Canvas markdown content copied to clipboard successfully!");
+                  }).catch(err => {
+                    setStatusText("Failed to copy content: " + err);
+                  });
+                }}
+                className={`px-2.5 py-1 rounded border transition-colors cursor-pointer text-xs shrink-0 flex items-center gap-1.5 ${
+                  themeMode === "warm" 
+                    ? "bg-[#faf6ee] border-amber-955/20 text-neutral-600 hover:bg-[#eae3d5]" 
+                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 focus:border-crimson"
+                }`}
+                title="Copy entire raw markdown to clipboard"
+              >
+                <Copy className="w-3.5 h-3.5 text-crimson" />
+                <span className="font-elite text-[10px]">Copy Markdown</span>
+              </button>
+
+              {/* Print / PDF button */}
+              <button
+                onClick={() => {
+                  window.print();
+                }}
+                className={`px-2.5 py-1 rounded border transition-colors cursor-pointer text-xs shrink-0 flex items-center gap-1.5 ${
+                  themeMode === "warm" 
+                    ? "bg-[#faf6ee] border-amber-955/20 text-neutral-600 hover:bg-[#eae3d5]" 
+                    : "bg-zinc-900 border-zinc-800 text-zinc-400 hover:bg-zinc-800 focus:border-crimson"
+                }`}
+                title="Print current document and metadata to PDF"
+              >
+                <Printer className="w-3.5 h-3.5 text-crimson" />
+                <span className="font-elite text-[10px]">Print / PDF</span>
+              </button>
+
+              <div className={`h-4 w-[1px] mx-1 ${themeMode === "warm" ? "bg-amber-900/20" : "bg-zinc-800"} shrink-0`} division-line="true"></div>
+
               {/* Toggle Files Left Sidebar */}
               <button
                 onClick={() => setShowLeftSidebar(!showLeftSidebar)}
@@ -2183,13 +2294,27 @@ npx cap open android`}
                   &#123;% Liquid %&#125;
                 </button>
 
+                {/* Generate Table of Contents */}
+                <button
+                  onClick={handleGenerateTOC}
+                  className={`ml-auto px-2 py-1 text-[10px] font-elite flex items-center gap-1 cursor-pointer transition-all border rounded ${
+                    themeMode === "warm"
+                      ? "bg-amber-50/50 border-amber-955/20 text-neutral-800 hover:bg-[#eae3d5]"
+                      : "bg-zinc-900/60 border-zinc-800 text-zinc-350 hover:text-white hover:bg-zinc-800"
+                  }`}
+                  title="Scan document headers and inject Table of Contents block"
+                >
+                  <ListTodo className="w-3 h-3 text-crimson" />
+                  <span>Generate TOC</span>
+                </button>
+
                 {/* Prettify Command Bot */}
                 <button
                   onClick={handlePrettifyMarkdown}
-                  className={`ml-auto px-2 py-1 text-[10px] font-elite flex items-center gap-1 cursor-pointer transition-all border rounded ${
+                  className={`px-2 py-1 text-[10px] font-elite flex items-center gap-1 cursor-pointer transition-all border rounded ${
                     themeMode === "warm"
-                      ? "bg-emerald-50 border-emerald-600/30 text-emerald-800 hover:bg-emerald-100/50"
-                      : "bg-emerald-950/20 border-emerald-900/30 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40"
+                      ? "bg-emerald-50 border-emerald-600/30 text-emerald-800 hover:bg-[#eae3d5]"
+                      : "bg-emerald-955/20 border-emerald-900/30 text-emerald-400 hover:text-emerald-300 hover:bg-emerald-950/40"
                   }`}
                   title="Clean up whitespace & align raw Liquid markers"
                 >
@@ -2199,6 +2324,68 @@ npx cap open android`}
                   <span>Prettify Post</span>
                 </button>
               </div>
+
+              {/* Collapsible Jekyll/Markdown Syntax Guide Trigger */}
+              <div className={`px-3 py-1.5 border-b flex items-center justify-between cursor-pointer select-none text-[10px] uppercase tracking-wider font-elite ${
+                themeMode === "warm" 
+                  ? "bg-[#faf6ee]/60 border-amber-955/10 text-neutral-600 hover:bg-[#eae3d5]/50" 
+                  : "bg-zinc-950/40 border-zinc-900 text-zinc-400 hover:bg-zinc-900/50"
+              }`}
+              onClick={() => setShowSyntaxGuide(!showSyntaxGuide)}
+              >
+                <div className="flex items-center gap-1.5">
+                  <BookOpen className="w-3.5 h-3.5 text-crimson" />
+                  <span>Jekyll & Markdown Syntax Reference Scribe Guide</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="opacity-60">{showSyntaxGuide ? "COLLAPSE" : "EXPAND GUIDE"}</span>
+                  {showSyntaxGuide ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                </div>
+              </div>
+
+              {/* Syntax Guide Content */}
+              {showSyntaxGuide && (
+                <div className={`p-4 border-b font-sans text-xs transition-all ${
+                  themeMode === "warm" 
+                    ? "bg-[#faf6ee] border-amber-955/20 text-neutral-800" 
+                    : "bg-zinc-900/90 border-zinc-800 text-zinc-300"
+                }`}>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-left">
+                    <div>
+                      <h4 className="font-bold border-b pb-1 mb-1.5 text-crimson font-elite text-[11px] uppercase tracking-wider">Headers & Layout</h4>
+                      <ul className="space-y-1 font-mono text-[10px]">
+                        <li><span className="text-zinc-500">## Title</span> &rarr; Heading 2</li>
+                        <li><span className="text-zinc-500">### Title</span> &rarr; Heading 3</li>
+                        <li><span className="text-zinc-500">&lt;!--more--&gt;</span> &rarr; Post excerpt tag</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-bold border-b pb-1 mb-1.5 text-crimson font-elite text-[11px] uppercase tracking-wider">Emphasis</h4>
+                      <ul className="space-y-1 font-mono text-[10px]">
+                        <li><span className="text-zinc-500">**text**</span> &rarr; <strong>Bold Text</strong></li>
+                        <li><span className="text-zinc-500">*text*</span> &rarr; <em>Italic Text</em></li>
+                        <li><span className="text-zinc-500">`code`</span> &rarr; <code>Inline Code</code></li>
+                       </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-bold border-b pb-1 mb-1.5 text-crimson font-elite text-[11px] uppercase tracking-wider">Lists & Callouts</h4>
+                      <ul className="space-y-1 font-mono text-[10px]">
+                        <li><span className="text-zinc-500">* Item</span> &rarr; Bullet List</li>
+                        <li><span className="text-zinc-500">1. Item</span> &rarr; Ordered List</li>
+                        <li><span className="text-zinc-500">&gt; [!NOTE]</span> &rarr; Custom Callout Box</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className="font-bold border-b pb-1 mb-1.5 text-crimson font-elite text-[11px] uppercase tracking-wider">Jekyll Liquid</h4>
+                      <ul className="space-y-1 font-mono text-[10px]">
+                        <li><span className="text-zinc-500">&#123;&#123; site.title &#125;&#125;</span> &rarr; Site Variable</li>
+                        <li><span className="text-zinc-500">&#123;% include f.html %&#125;</span> &rarr; Template</li>
+                        <li><span className="text-zinc-500">[Text](URL)</span> &rarr; Hyperlink</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Editable body textbox */}
               <div className="flex-1 p-4 relative min-h-[400px]">
@@ -2544,6 +2731,29 @@ npx cap open android`}
                     }`}
                     placeholder="Oliver Sterling"
                   />
+                </div>
+
+                {/* published_date (Jekyll dynamic scheduling) */}
+                <div>
+                  <label className="block text-[10px] font-elite uppercase tracking-widest mb-1 leading-none flex justify-between">
+                    <span className={themeMode === "warm" ? "text-neutral-700 font-semibold" : "text-zinc-500"}>Jekyll Publish Date</span>
+                    <span className="font-mono text-[9px] text-zinc-500">Post scheduling</span>
+                  </label>
+                  <div className="relative flex items-center">
+                    <input
+                      type="date"
+                      value={draftFrontMatter.published_date || ""}
+                      onChange={(e) => setDraftFrontMatter(prev => ({ ...prev, published_date: e.target.value }))}
+                      className={`w-full font-mono text-xs p-2 rounded focus:border-crimson outline-none border ${
+                        themeMode === "warm" 
+                          ? "bg-[#fbf9f4] border-amber-955/25 text-neutral-900" 
+                          : "bg-zinc-900 border-zinc-800 text-zinc-350"
+                      }`}
+                    />
+                  </div>
+                  <p className="text-[9px] text-zinc-550 mt-1 italic">
+                    * Select a future date to schedule Jekyll build runs.
+                  </p>
                 </div>
 
                 {/* categories */}
@@ -3528,6 +3738,28 @@ npx cap open android`}
           </div>
         </div>
       )}
+
+      {/* Hidden Print Document Target */}
+      <div id="print-document-target">
+        <h1 className="print-title">{draftTitle || "Untitled Chapter Draft"}</h1>
+        <div className="print-meta">
+          <span><strong>Layout:</strong> {draftFrontMatter.layout || "post"}</span>
+          <span><strong>Author:</strong> {draftFrontMatter.author || "Global Editor"}</span>
+          <span><strong>Date:</strong> {draftFrontMatter.date || new Date().toISOString().split("T")[0]}</span>
+          {draftFrontMatter.published_date && (
+            <span><strong>Publish Date:</strong> {draftFrontMatter.published_date}</span>
+          )}
+          {draftFrontMatter.categories && draftFrontMatter.categories.length > 0 && (
+            <span><strong>Categories:</strong> {draftFrontMatter.categories.join(", ")}</span>
+          )}
+        </div>
+        <div 
+          className="print-body"
+          dangerouslySetInnerHTML={{
+            __html: renderMarkdown(draftMarkdown, selectedRepo.owner, selectedRepo.name, selectedRepo.selectedBranch),
+          }}
+        />
+      </div>
 
     </div>
   );
